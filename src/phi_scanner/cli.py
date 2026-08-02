@@ -54,6 +54,12 @@ _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
     help="Optional path to save an audit summary JSON file.",
 )
 @click.option(
+    "--use-agents",
+    is_flag=True,
+    default=False,
+    help="Enable Concurrent Agent Orchestration mode for entity scanning.",
+)
+@click.option(
     "--quiet", "-q",
     is_flag=True,
     default=False,
@@ -66,6 +72,7 @@ def main(
     min_confidence: str,
     workers: int,
     summary_file: Path | None,
+    use_agents: bool,
     quiet: bool,
 ) -> None:
     """Scan PATH (file or directory) for Indian PII identifiers.
@@ -90,12 +97,18 @@ def main(
 
     findings: list[Finding] = []
 
+    mode_label = f"parallel agents mode (workers: {workers})" if use_agents else f"parallel mode (workers: {workers})"
     if not quiet:
-        click.echo(f"Scanning: {path} (workers: {workers})", err=True)
+        click.echo(f"Scanning: {path} [{mode_label}]", err=True)
 
     try:
-        # Use parallel scanning for directories, linear for single files
-        scanner = engine.scan_path_parallel(path, max_workers=workers) if path.is_dir() else engine.scan_file(path)
+        if use_agents:
+            scanner = engine.scan_path_agents(path, num_agents=workers)
+        elif path.is_dir():
+            scanner = engine.scan_path_parallel(path, max_workers=workers)
+        else:
+            scanner = engine.scan_file(path)
+
         for finding in scanner:
             rank = _CONFIDENCE_ORDER.get(finding.confidence, 0)
             if rank >= min_rank:

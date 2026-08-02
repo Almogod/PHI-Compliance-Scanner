@@ -119,6 +119,18 @@ class ScanEngine:
         else:
             raise FileNotFoundError(f"Path does not exist: {path}")
 
+    def scan_path_agents(self, path: Path, num_agents: int = 4) -> Iterator[Finding]:
+        """Concurrent Agent Orchestration pipeline."""
+        from .agent_orchestrator import ParallelAgentOrchestrator
+        orchestrator = ParallelAgentOrchestrator(num_workers=num_agents)
+        for af in orchestrator.orchestrate_path(path):
+            yield Finding(
+                entity_type=af.entity_type,
+                masked_value=af.masked_value,
+                confidence=af.confidence,
+                location=af.location,
+            )
+
     def scan_path_parallel(self, path: Path, max_workers: int = 4) -> Iterator[Finding]:
         """Parallel directory scan using thread workers for high throughput."""
         from concurrent.futures import ThreadPoolExecutor

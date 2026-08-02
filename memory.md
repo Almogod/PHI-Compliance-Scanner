@@ -5,12 +5,11 @@
 ---
 
 ## Current status
-**As of 2026-08-02:** Phase 3 Hardened & Streamlined for Enterprise Scale.
-- Multi-threaded parallel directory scanning (`scan_path_parallel`) with `--workers N`.
-- Bulletproof file error isolation: file locks (`PermissionError`), corrupt ZIPs (`BadZipFile`), and decoding errors yield `FILE_READ_ERROR` diagnostics without crashing scans.
-- Executive Compliance Audit Summary output & `--summary-file` JSON exporter.
-- Formats supported: `.csv`, `.xlsx`, `.xls`, `.docx`, `.pdf`.
-- 172/172 tests passing.
+**As of 2026-08-02:** Parallel Agent Orchestrator Deployed.
+- `ParallelAgentOrchestrator` (`src/phi_scanner/agent_orchestrator.py`) manages concurrent Producer-Consumer worker streams with specialized entity agents (`AadhaarAgent`, `PanAgent`, `GstinAgent`, `MobileAgent`).
+- CLI supports `--use-agents` flag for concurrent MapReduce entity scanning.
+- 174/174 tests passing.
+
 
 
 
