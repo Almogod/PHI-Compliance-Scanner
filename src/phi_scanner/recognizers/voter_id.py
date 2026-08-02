@@ -8,7 +8,13 @@ Voter ID / EPIC spec (Election Commission of India):
 
 Confidence tiers:
   HIGH   — Pattern matches + header/inline context (e.g. "Voter ID", "EPIC").
-  MEDIUM — Bare 10-character EPIC pattern match without conflicting context.
+  MEDIUM — Bare 10-character EPIC pattern match with no conflicting context.
+           Emitted cautiously because the pattern is structurally broad.
+
+False-positive guards:
+  - Input is normalised to uppercase before matching (catches mixed-case data).
+  - Bare matches (no context signals) are always MEDIUM, never HIGH.
+  - Context boosting in engine.py upgrades MEDIUM → HIGH when column or label confirms.
 """
 from __future__ import annotations
 
@@ -17,6 +23,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+# Strict word-boundary pattern: 3 uppercase letters then 7 digits.
+# Preceded/followed by alphanumeric → rejected (prevents partial matches inside
+# longer codes like product SKUs or reference IDs).
 _PATTERN = re.compile(r"(?<![A-Z0-9])([A-Z]{3}[0-9]{7})(?![A-Z0-9])")
 
 
@@ -40,9 +49,14 @@ def _mask(val: str) -> str:
 
 
 def find_voter_id(text: str) -> list[VoterIdMatch]:
-    """Return all Voter ID (EPIC) candidates found in *text*."""
+    """Return all Voter ID (EPIC) candidates found in *text*.
+
+    Normalises input to uppercase before scanning so mixed-case data
+    (e.g. 'abc1234567') is correctly detected.
+    """
+    upper = text.upper()
     results: list[VoterIdMatch] = []
-    for m in _PATTERN.finditer(text):
+    for m in _PATTERN.finditer(upper):
         raw = m.group(1)
         results.append(VoterIdMatch(
             raw_value=raw,

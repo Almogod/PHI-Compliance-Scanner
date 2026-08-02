@@ -43,10 +43,10 @@ _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
 )
 @click.option(
     "--workers", "-w",
-    type=int,
+    type=click.IntRange(min=1, max=32),
     default=4,
     show_default=True,
-    help="Number of parallel worker threads for directory scanning.",
+    help="Number of parallel worker threads for directory scanning (1–32).",
 )
 @click.option(
     "--summary-file", "-s",

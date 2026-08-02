@@ -62,11 +62,11 @@ class AadhaarAgent:
     def __init__(self, agent_id: str = "agent-aadhaar"):
         self.agent_id = agent_id
 
-    def process_chunk(self, chunk: str) -> list[tuple[str, str, str]]:
-        """Return list of (entity_type, masked_value, base_confidence)."""
+    def process_chunk(self, chunk: str) -> list[tuple[str, str, str, str]]:
+        """Return list of (entity_type, masked_value, raw_value, base_confidence)."""
         results = []
         for m in find_aadhaar(chunk):
-            results.append(("AADHAAR", m.masked_value, m.confidence.value))
+            results.append(("AADHAAR", m.masked_value, m.raw_value, m.confidence.value))
         return results
 
 
@@ -76,10 +76,10 @@ class PanAgent:
     def __init__(self, agent_id: str = "agent-pan"):
         self.agent_id = agent_id
 
-    def process_chunk(self, chunk: str) -> list[tuple[str, str, str]]:
+    def process_chunk(self, chunk: str) -> list[tuple[str, str, str, str]]:
         results = []
         for m in find_pan(chunk):
-            results.append(("PAN", m.masked_value, m.confidence.value))
+            results.append(("PAN", m.masked_value, m.raw_value, m.confidence.value))
         return results
 
 
@@ -89,10 +89,10 @@ class GstinAgent:
     def __init__(self, agent_id: str = "agent-gstin"):
         self.agent_id = agent_id
 
-    def process_chunk(self, chunk: str) -> list[tuple[str, str, str]]:
+    def process_chunk(self, chunk: str) -> list[tuple[str, str, str, str]]:
         results = []
         for m in find_gstin(chunk):
-            results.append(("GSTIN", m.masked_value, m.confidence.value))
+            results.append(("GSTIN", m.masked_value, m.raw_value, m.confidence.value))
         return results
 
 
@@ -102,10 +102,10 @@ class MobileAgent:
     def __init__(self, agent_id: str = "agent-mobile"):
         self.agent_id = agent_id
 
-    def process_chunk(self, chunk: str) -> list[tuple[str, str, str]]:
+    def process_chunk(self, chunk: str) -> list[tuple[str, str, str, str]]:
         results = []
         for m in find_mobile(chunk):
-            results.append(("IN_MOBILE", m.masked_value, m.confidence.value))
+            results.append(("IN_MOBILE", m.masked_value, m.normalised, m.confidence.value))
         return results
 
 
@@ -115,10 +115,10 @@ class VoterIdAgent:
     def __init__(self, agent_id: str = "agent-voter-id"):
         self.agent_id = agent_id
 
-    def process_chunk(self, chunk: str) -> list[tuple[str, str, str]]:
+    def process_chunk(self, chunk: str) -> list[tuple[str, str, str, str]]:
         results = []
         for m in find_voter_id(chunk):
-            results.append(("VOTER_ID", m.masked_value, m.confidence.value))
+            results.append(("VOTER_ID", m.masked_value, m.raw_value, m.confidence.value))
         return results
 
 
@@ -128,10 +128,10 @@ class PassportAgent:
     def __init__(self, agent_id: str = "agent-passport"):
         self.agent_id = agent_id
 
-    def process_chunk(self, chunk: str) -> list[tuple[str, str, str]]:
+    def process_chunk(self, chunk: str) -> list[tuple[str, str, str, str]]:
         results = []
         for m in find_passport(chunk):
-            results.append(("PASSPORT", m.masked_value, m.confidence.value))
+            results.append(("PASSPORT", m.masked_value, m.raw_value, m.confidence.value))
         return results
 
 
@@ -169,7 +169,10 @@ class ParallelAgentOrchestrator:
                 for chunk in chunks:
                     inline_labels = detect_inline_labels(chunk)
 
-                    # Run specialized agents concurrently for this chunk
+                    # Run specialized agents sequentially per chunk.
+                    # (File-level parallelism via ThreadPoolExecutor is where
+                    # actual concurrency happens; per-chunk sequential calls
+                    # are intentional to keep thread-safety simple.)
                     chunk_matches = []
                     chunk_matches.extend(self.aadhaar_agent.process_chunk(chunk))
                     chunk_matches.extend(self.pan_agent.process_chunk(chunk))
@@ -178,8 +181,8 @@ class ParallelAgentOrchestrator:
                     chunk_matches.extend(self.voter_id_agent.process_chunk(chunk))
                     chunk_matches.extend(self.passport_agent.process_chunk(chunk))
 
-                    for entity_type, masked_value, base_confidence in chunk_matches:
-                        key = (entity_type, masked_value)
+                    for entity_type, masked_value, raw_value, base_confidence in chunk_matches:
+                        key = (entity_type, raw_value)
                         if key in seen:
                             continue
                         seen.add(key)

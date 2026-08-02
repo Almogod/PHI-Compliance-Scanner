@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
+from .ingestion.base import SourceLocation  # noqa: F401 — re-exported & used in scan_file error path
+
 from .ingestion.csv_ingester import CsvIngester
 from .ingestion.xlsx_ingester import XlsxIngester
 from .ingestion.docx_ingester import DocxIngester
@@ -101,11 +103,12 @@ class ScanEngine:
             for cell_text, location in ingester.ingest(path):
                 yield from self._scan_cell(cell_text, location)
         except Exception as exc:
-            # Yield error diagnostic finding so auditors know this file was skipped
+            # Yield error diagnostic finding so auditors know this file was skipped.
+            # Include class name + truncated message for root-cause visibility without leaking content.
             err_loc = SourceLocation(file_path=path, sheet_name=None, row=1, column="ERROR")
             yield Finding(
                 entity_type="FILE_READ_ERROR",
-                masked_value=f"Error reading file: {exc.__class__.__name__}",
+                masked_value=f"{exc.__class__.__name__}: {str(exc)[:120]}",
                 confidence="LOW",
                 location=err_loc,
             )
@@ -168,8 +171,9 @@ class ScanEngine:
         # Step 3: Column-level context
         column_entity = detect_column_entity(location.column)
 
-        # Deduplicate findings across chunks (original + sub-chunks)
-        seen: set[tuple[str, str]] = set()  # (entity_type, masked_value)
+        # Deduplicate findings across chunks (original + sub-chunks).
+        # Key on raw value so two identifiers that share last-4 digits are NOT collapsed.
+        seen: set[tuple[str, str]] = set()  # (entity_type, raw_value)
 
         for chunk in chunks:
             # Step 4: Inline label context
@@ -177,7 +181,7 @@ class ScanEngine:
 
             # Step 5: Run all recognizers
             for match in find_aadhaar(chunk):
-                key = ("AADHAAR", match.masked_value)
+                key = ("AADHAAR", match.raw_value)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -190,7 +194,7 @@ class ScanEngine:
                 yield Finding("AADHAAR", match.masked_value, confidence, location)
 
             for match in find_pan(chunk):
-                key = ("PAN", match.masked_value)
+                key = ("PAN", match.raw_value)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -202,7 +206,7 @@ class ScanEngine:
                 yield Finding("PAN", match.masked_value, confidence, location)
 
             for match in find_gstin(chunk):
-                key = ("GSTIN", match.masked_value)
+                key = ("GSTIN", match.raw_value)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -214,7 +218,7 @@ class ScanEngine:
                 yield Finding("GSTIN", match.masked_value, confidence, location)
 
             for match in find_mobile(chunk):
-                key = ("IN_MOBILE", match.masked_value)
+                key = ("IN_MOBILE", match.normalised)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -226,7 +230,7 @@ class ScanEngine:
                 yield Finding("IN_MOBILE", match.masked_value, confidence, location)
 
             for match in find_voter_id(chunk):
-                key = ("VOTER_ID", match.masked_value)
+                key = ("VOTER_ID", match.raw_value)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -238,7 +242,7 @@ class ScanEngine:
                 yield Finding("VOTER_ID", match.masked_value, confidence, location)
 
             for match in find_passport(chunk):
-                key = ("PASSPORT", match.masked_value)
+                key = ("PASSPORT", match.raw_value)
                 if key in seen:
                     continue
                 seen.add(key)
