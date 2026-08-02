@@ -1,0 +1,4 @@
+feedback_type,entity_type,raw_sample_value,context_column,file_format,notes
+FP,IN_MOBILE,"Rs. 5000000000",amount,XLSX,Currency amount falsely flagged as mobile number
+FN,PAN,"ABC PD 5678 K",pan_no,CSV,Spaced PAN was missed in old version
+FP,AADHAAR,"123456789012",order_id,CSV,Order ID passed Verhoeff by random chance

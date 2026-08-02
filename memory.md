@@ -5,8 +5,11 @@
 ---
 
 ## Current status
-**As of 2026-08-02:** Phase 1 complete. CLI ships and passes all 116 tests.
-Phase 0 (customer discovery) should run in parallel with Phase 2 (design partner pilot).
+**As of 2026-08-02:** Phase 2 (Design Partner Pilot) is active.
+- Pilot documentation shipped (`docs/PILOT_GUIDE.md`).
+- Automated feedback ingestion loop operational (`pilot/ingest_feedback.py` -> `tests/test_pilot_regressions.py`).
+- Partner discovery log established (`pilot/DISCOVERY_LOG.md`).
+
 
 ---
 
