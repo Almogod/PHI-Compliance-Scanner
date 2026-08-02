@@ -94,20 +94,7 @@ def write_encrypted(
     output_path: Path,
     passphrase: str,
 ) -> None:
-    """Write an AES-256-GCM encrypted audit report to output_path.
-
-    The report payload is the same JSON structure as write_json(), but
-    wrapped in an authenticated encryption envelope so that:
-      - Confidentiality: file-path + cell-location data cannot be read
-        without the passphrase.
-      - Integrity: the GCM authentication tag detects any tampering.
-
-    Decryption is possible with decrypt_report() below or any AES-GCM
-    implementation given the same passphrase and the documented file format.
-
-    Requires: pip install cryptography
-    Raises: ImportError with a clear message if cryptography is not installed.
-    """
+    """Write an AES-256-GCM encrypted audit report to output_path."""
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -119,7 +106,6 @@ def write_encrypted(
             f"Original error: {exc}"
         ) from exc
 
-    # Build JSON payload (same as write_json)
     counts: Counter[str] = Counter(f.entity_type for f in findings)
     file_counts: Counter[str] = Counter(f.location.as_dict()["file"] for f in findings)
     payload = {
@@ -135,23 +121,19 @@ def write_encrypted(
     }
     plaintext = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
 
-    # Key derivation
     salt = os.urandom(16)
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
-        length=32,   # 256-bit key
+        length=32,
         salt=salt,
         iterations=_PBKDF2_ITERATIONS,
     )
     key = kdf.derive(passphrase.encode("utf-8"))
 
-    # AES-256-GCM encryption
-    nonce = os.urandom(12)   # 96-bit nonce for GCM
+    nonce = os.urandom(12)
     aesgcm = AESGCM(key)
     ciphertext_with_tag = aesgcm.encrypt(nonce, plaintext, None)
-    # cryptography library appends the 16-byte GCM tag to ciphertext
 
-    # Write: magic header | salt | nonce | ciphertext+tag
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "wb") as fh:
         fh.write(_ENC_HEADER)
@@ -161,12 +143,7 @@ def write_encrypted(
 
 
 def decrypt_report(encrypted_path: Path, passphrase: str) -> dict:
-    """Decrypt a .phi encrypted report and return the JSON payload as a dict.
-
-    Raises:
-      ValueError   — if the magic header is wrong (not a PHI encrypted file).
-      cryptography.exceptions.InvalidTag — if passphrase is wrong or file is corrupted.
-    """
+    """Decrypt a .phi encrypted report and return the JSON payload as a dict."""
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -202,10 +179,7 @@ def decrypt_report(encrypted_path: Path, passphrase: str) -> dict:
 
 
 def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: str = "") -> None:
-    """Write a self-contained executive audit report as an interactive HTML document.
-
-    Zero external network dependencies — 100% offline-ready, suitable for board/auditor presentation.
-    """
+    """Write a self-contained executive audit report as an interactive HTML document with modern light-accent polish."""
     counts: Counter[str] = Counter(f.entity_type for f in findings)
     confidence_counts: Counter[str] = Counter(f.confidence for f in findings)
     file_counts: Counter[str] = Counter(f.location.as_dict()["file"] for f in findings)
@@ -215,13 +189,13 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
     med_count = confidence_counts.get("MEDIUM", 0)
 
     if high_count > 0:
-        status_badge = '<span class="badge risk-high">CRITICAL RISK — ACTION REQUIRED</span>'
+        status_badge = '<span class="badge risk-high"><span class="badge-dot"></span>CRITICAL RISK — ACTION REQUIRED</span>'
         status_desc = "Verified PII exposures were detected in local files. Immediate remediation recommended."
     elif med_count > 0:
-        status_badge = '<span class="badge risk-medium">WARNING — REVIEW REQUIRED</span>'
+        status_badge = '<span class="badge risk-medium"><span class="badge-dot"></span>WARNING — REVIEW REQUIRED</span>'
         status_desc = "Unverified PII candidate patterns were detected. Manual review recommended."
     else:
-        status_badge = '<span class="badge risk-low">PASS — LOW RISK</span>'
+        status_badge = '<span class="badge risk-low"><span class="badge-dot"></span>PASS — LOW RISK</span>'
         status_desc = "No high-confidence PII exposures detected."
 
     # Build rows HTML
@@ -237,7 +211,7 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
 
         table_rows.append(f"""
         <tr data-entity="{f.entity_type}" data-confidence="{f.confidence}">
-            <td>{idx}</td>
+            <td class="row-num">{idx}</td>
             <td class="file-path">{loc['file']}</td>
             <td><span class="location-tag">{loc_display}</span></td>
             <td><span class="entity-tag {entity_class}">{f.entity_type}</span></td>
@@ -270,30 +244,53 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PHI Compliance Audit Report</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --bg-main: #0f172a;
-            --bg-card: #1e293b;
-            --bg-hover: #334155;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --border: #334155;
-            --primary: #38bdf8;
-            --danger: #ef4444;
-            --warning: #f59e0b;
-            --success: #10b981;
+            --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+            --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+            --bg-body: #f8fafc;
+            --bg-card: #ffffff;
+            --bg-subtle: #f1f5f9;
+            --bg-hover: #f8fafc;
+            
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --text-dim: #94a3b8;
+            --border: #e2e8f0;
+            --border-hover: #cbd5e1;
+            
+            --primary: #4f46e5;
+            --primary-light: #e0e7ff;
+            --danger: #e11d48;
+            --danger-bg: #ffe4e6;
+            --warning: #d97706;
+            --warning-bg: #fef3c7;
+            --success: #059669;
+            --success-bg: #d1fae5;
+            
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+            --shadow-md: 0 4px 16px -2px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03);
+            --shadow-lg: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
+
+            --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }}
 
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-main);
+            font-family: var(--font-sans);
+            background-color: var(--bg-body);
             color: var(--text-main);
-            padding: 2rem;
+            padding: 2.5rem 2rem;
             line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
         }}
 
-        .container {{ max-width: 1200px; margin: 0 auto; }}
+        .container {{ max-width: 1240px; margin: 0 auto; }}
 
         header {{
             display: flex;
@@ -304,46 +301,78 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
             margin-bottom: 2rem;
         }}
 
-        h1 {{ font-size: 1.875rem; font-weight: 700; color: var(--text-main); }}
-        .subtitle {{ color: var(--text-muted); font-size: 0.875rem; margin-top: 0.25rem; }}
+        h1 {{
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text-main);
+        }}
+        
+        .subtitle {{
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }}
 
         .badge {{
-            display: inline-block;
-            padding: 0.35rem 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.4rem 0.85rem;
             border-radius: 9999px;
             font-size: 0.75rem;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.04em;
+            transition: transform 160ms var(--ease-out);
         }}
-        .risk-high {{ background-color: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid var(--danger); }}
-        .risk-medium {{ background-color: rgba(245, 158, 11, 0.2); color: var(--warning); border: 1px solid var(--warning); }}
-        .risk-low {{ background-color: rgba(16, 185, 129, 0.2); color: var(--success); border: 1px solid var(--success); }}
 
-        .conf-high {{ background-color: rgba(239, 68, 68, 0.15); color: #fca5a5; }}
-        .conf-medium {{ background-color: rgba(245, 158, 11, 0.15); color: #fde047; }}
-        .conf-low {{ background-color: rgba(148, 163, 184, 0.15); color: #cbd5e1; }}
+        .badge-dot {{
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: currentColor;
+        }}
+
+        .risk-high {{ background-color: var(--danger-bg); color: var(--danger); border: 1px solid rgba(225, 29, 72, 0.2); }}
+        .risk-medium {{ background-color: var(--warning-bg); color: var(--warning); border: 1px solid rgba(217, 119, 6, 0.2); }}
+        .risk-low {{ background-color: var(--success-bg); color: var(--success); border: 1px solid rgba(5, 150, 105, 0.2); }}
+
+        .conf-high {{ background-color: #ffe4e6; color: #be123c; }}
+        .conf-medium {{ background-color: #fef3c7; color: #b45309; }}
+        .conf-low {{ background-color: #f1f5f9; color: #475569; }}
 
         .stats-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.25rem;
             margin-bottom: 2rem;
         }}
 
         .stat-card {{
             background-color: var(--bg-card);
-            padding: 1.25rem;
-            border-radius: 0.75rem;
+            padding: 1.5rem;
+            border-radius: 0.85rem;
             border: 1px solid var(--border);
+            box-shadow: var(--shadow-md);
+            transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out), border-color 200ms var(--ease-out);
         }}
 
-        .stat-label {{ color: var(--text-muted); font-size: 0.875rem; font-weight: 500; }}
-        .stat-value {{ font-size: 2rem; font-weight: 700; margin-top: 0.25rem; color: var(--text-main); }}
+        .stat-card:hover {{
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--border-hover);
+        }}
+
+        .stat-label {{ color: var(--text-muted); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }}
+        .stat-value {{ font-size: 2.25rem; font-weight: 800; margin-top: 0.35rem; color: var(--text-main); letter-spacing: -0.03em; font-family: var(--font-mono); }}
 
         .section-grid {{
             display: grid;
-            grid-template-columns: 2fr 1fr;
+            grid-template-columns: 1.8fr 1.2fr;
             gap: 1.5rem;
             margin-bottom: 2rem;
         }}
@@ -351,72 +380,130 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
 
         .card {{
             background-color: var(--bg-card);
-            padding: 1.5rem;
-            border-radius: 0.75rem;
+            padding: 1.75rem;
+            border-radius: 0.85rem;
             border: 1px solid var(--border);
+            box-shadow: var(--shadow-md);
         }}
 
-        .card-title {{ font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }}
+        .card-title {{
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 1.25rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }}
 
-        .chart-row {{ display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }}
-        .chart-label {{ width: 110px; font-size: 0.875rem; font-weight: 600; color: var(--text-muted); }}
-        .chart-bar-bg {{ flex: 1; background-color: var(--bg-main); height: 12px; border-radius: 6px; overflow: hidden; }}
-        .chart-bar-fill {{ background: linear-gradient(90deg, #38bdf8, #818cf8); height: 100%; border-radius: 6px; transition: width 0.3s ease; }}
-        .chart-val {{ width: 35px; text-align: right; font-weight: 700; font-size: 0.875rem; }}
+        .chart-row {{ display: flex; align-items: center; gap: 1rem; margin-bottom: 0.85rem; }}
+        .chart-label {{ width: 110px; font-size: 0.8125rem; font-weight: 600; color: var(--text-muted); }}
+        .chart-bar-bg {{ flex: 1; background-color: var(--bg-subtle); height: 10px; border-radius: 9999px; overflow: hidden; }}
+        .chart-bar-fill {{ background: linear-gradient(90deg, #6366f1, #3b82f6); height: 100%; border-radius: 9999px; transition: width 400ms var(--ease-out); }}
+        .chart-val {{ width: 40px; text-align: right; font-weight: 700; font-size: 0.8125rem; color: var(--text-main); font-family: var(--font-mono); }}
 
         .toolbar {{
             display: flex;
-            gap: 1rem;
-            margin-bottom: 1rem;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
             flex-wrap: wrap;
             align-items: center;
         }}
+
         .search-input {{
-            background-color: var(--bg-main);
+            background-color: var(--bg-card);
             border: 1px solid var(--border);
             color: var(--text-main);
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
+            padding: 0.55rem 1rem;
+            border-radius: 0.6rem;
             font-size: 0.875rem;
-            width: 250px;
+            font-family: var(--font-sans);
+            width: 280px;
+            outline: none;
+            box-shadow: var(--shadow-sm);
+            transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
         }}
+
+        .search-input:focus {{
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-light);
+        }}
+
         .filter-btn {{
-            background-color: var(--bg-main);
+            background-color: var(--bg-subtle);
             border: 1px solid var(--border);
             color: var(--text-muted);
-            padding: 0.5rem 0.75rem;
-            border-radius: 0.5rem;
+            padding: 0.5rem 0.85rem;
+            border-radius: 0.6rem;
             font-size: 0.75rem;
             font-weight: 600;
             cursor: pointer;
+            transition: all 160ms var(--ease-out), transform 120ms var(--ease-out);
         }}
-        .filter-btn.active {{ background-color: var(--primary); color: #000; border-color: var(--primary); }}
+
+        .filter-btn:hover {{
+            background-color: #e2e8f0;
+            color: var(--text-main);
+        }}
+
+        .filter-btn:active {{
+            transform: scale(0.97);
+        }}
+
+        .filter-btn.active {{
+            background-color: var(--primary);
+            color: #ffffff;
+            border-color: var(--primary);
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25);
+        }}
+
+        .table-wrapper {{
+            overflow-x: auto;
+            border-radius: 0.6rem;
+            border: 1px solid var(--border);
+        }}
 
         table {{
             width: 100%;
             border-collapse: collapse;
             font-size: 0.875rem;
+            background-color: var(--bg-card);
         }}
-        th, td {{ padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }}
-        th {{ background-color: var(--bg-main); color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }}
+
+        th, td {{ padding: 0.85rem 1.1rem; text-align: left; border-bottom: 1px solid var(--border); }}
+        th {{
+            background-color: var(--bg-subtle);
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.725rem;
+            letter-spacing: 0.05em;
+        }}
+
+        tr {{ transition: background-color 120ms var(--ease-out); }}
         tr:hover {{ background-color: var(--bg-hover); }}
 
-        .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 600; color: #a5f3fc; }}
-        .file-path {{ word-break: break-all; max-width: 320px; font-size: 0.8125rem; color: #cbd5e1; }}
-        .location-tag {{ background: rgba(51, 65, 85, 0.5); padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem; }}
+        .row-num {{ color: var(--text-dim); font-size: 0.75rem; font-family: var(--font-mono); }}
+        .mono {{ font-family: var(--font-mono); font-weight: 600; color: #0284c7; background: #f0f9ff; padding: 0.2rem 0.5rem; border-radius: 0.35rem; border: 1px solid #bae6fd; font-size: 0.8125rem; display: inline-block; }}
+        .file-path {{ word-break: break-all; max-width: 320px; font-size: 0.8125rem; color: #334155; font-weight: 500; }}
+        .location-tag {{ background: var(--bg-subtle); color: var(--text-muted); padding: 0.25rem 0.5rem; border-radius: 0.35rem; font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border); }}
 
-        .entity-tag {{ font-weight: 700; font-size: 0.75rem; padding: 0.2rem 0.4rem; border-radius: 0.25rem; }}
-        .entity-aadhaar {{ background-color: rgba(56, 189, 248, 0.2); color: #7dd3fc; }}
-        .entity-pan {{ background-color: rgba(168, 85, 247, 0.2); color: #c084fc; }}
-        .entity-gstin {{ background-color: rgba(236, 72, 153, 0.2); color: #f472b6; }}
-        .entity-in_mobile {{ background-color: rgba(52, 211, 153, 0.2); color: #6ee7b7; }}
+        .entity-tag {{ font-weight: 700; font-size: 0.725rem; padding: 0.25rem 0.5rem; border-radius: 0.35rem; letter-spacing: 0.03em; display: inline-block; }}
+        .entity-aadhaar {{ background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }}
+        .entity-pan {{ background-color: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff; }}
+        .entity-gstin {{ background-color: #fce7f3; color: #be185d; border: 1px solid #fbcfe8; }}
+        .entity-in_mobile {{ background-color: #d1fae5; color: #047857; border: 1px solid #a7f3d0; }}
+        .entity-bank_account {{ background-color: #fef3c7; color: #b45309; border: 1px solid #fde68a; }}
+        .entity-ifsc {{ background-color: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; }}
 
         footer {{
             margin-top: 3rem;
             padding-top: 1.5rem;
             border-top: 1px solid var(--border);
             color: var(--text-muted);
-            font-size: 0.75rem;
+            font-size: 0.8125rem;
             text-align: center;
         }}
     </style>
@@ -426,7 +513,11 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
         <header>
             <div>
                 <h1>PHI Compliance Audit Report</h1>
-                <div class="subtitle">Target: {target_path_str or "Local Workspace"} | Generated by PHI Compliance Scanner</div>
+                <div class="subtitle">
+                    <span>Target: {target_path_str or "Local Workspace"}</span>
+                    <span>•</span>
+                    <span>Generated by PHI Compliance Scanner</span>
+                </div>
             </div>
             <div>
                 {status_badge}
@@ -448,7 +539,7 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
             </div>
             <div class="stat-card">
                 <div class="stat-label">Audit Status</div>
-                <div class="stat-value" style="font-size: 1.25rem; font-weight: 600; margin-top: 0.5rem;">{status_desc}</div>
+                <div class="stat-value" style="font-size: 1.15rem; font-weight: 600; margin-top: 0.5rem; font-family: var(--font-sans);">{status_desc}</div>
             </div>
         </div>
 
@@ -478,25 +569,27 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
                 <button class="filter-btn" onclick="filterEntity('IN_MOBILE')">Mobile</button>
             </div>
 
-            <table>
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>File Location</th>
-                        <th>Position</th>
-                        <th>Entity Type</th>
-                        <th>Masked Value</th>
-                        <th>Confidence</th>
-                    </tr>
-                </thead>
-                <tbody id="findingsBody">
-                    {rows_html}
-                </tbody>
-            </table>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>File Location</th>
+                            <th>Position</th>
+                            <th>Entity Type</th>
+                            <th>Masked Value</th>
+                            <th>Confidence</th>
+                        </tr>
+                    </thead>
+                    <tbody id="findingsBody">
+                        {rows_html}
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <footer>
-            PHI Compliance Scanner v3.0 — Air-gapped local compliance engine
+            PHI Compliance Scanner v4.0 — Air-gapped local compliance engine
         </footer>
     </div>
 
@@ -541,4 +634,3 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
 
     with open(output_path, "w", encoding="utf-8") as fh:
         fh.write(html_content)
-

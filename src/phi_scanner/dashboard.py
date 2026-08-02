@@ -24,33 +24,51 @@ _HTML_PAGE = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PHI Compliance Scanner — Executive Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-dark: oklch(0.14 0.02 255);
-            --bg-card: oklch(0.19 0.025 255 / 0.85);
-            --bg-card-hover: oklch(0.23 0.03 255);
-            --border: oklch(0.28 0.03 255);
-            --border-glow: oklch(0.45 0.12 220 / 0.5);
+            --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+            --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+            --bg-body: #f8fafc;
+            --bg-card: #ffffff;
+            --bg-subtle: #f1f5f9;
+            --bg-hover: #f8fafc;
+            --bg-header: rgba(255, 255, 255, 0.92);
             
-            --accent-cyan: oklch(0.75 0.16 220);
-            --accent-cyan-hover: oklch(0.82 0.18 215);
-            --accent-green: oklch(0.72 0.17 150);
-            --accent-amber: oklch(0.78 0.16 70);
-            --accent-red: oklch(0.65 0.22 25);
+            --border: #e2e8f0;
+            --border-hover: #cbd5e1;
+            --border-focus: #818cf8;
             
-            --text-main: oklch(0.96 0.01 255);
-            --text-muted: oklch(0.70 0.02 255);
-            --text-dim: oklch(0.50 0.02 255);
+            --accent-indigo: #4f46e5;
+            --accent-indigo-hover: #4338ca;
+            --accent-indigo-light: #e0e7ff;
+            --accent-cyan: #0284c7;
+            --accent-green: #059669;
+            --accent-green-bg: #d1fae5;
+            --accent-amber: #d97706;
+            --accent-red: #e11d48;
+            --accent-red-bg: #ffe4e6;
             
-            --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            --font-mono: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --text-dim: #94a3b8;
+            
+            --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.03);
+            --shadow-md: 0 4px 18px -2px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03);
+            --shadow-lg: 0 12px 32px -4px rgba(15, 23, 42, 0.09);
+
+            --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
         
         body {
             font-family: var(--font-sans);
-            background-color: var(--bg-dark);
+            background-color: var(--bg-body);
             color: var(--text-main);
             min-height: 100vh;
             display: flex;
@@ -61,46 +79,53 @@ _HTML_PAGE = """<!DOCTYPE html>
 
         /* Top Navigation Header */
         header {
-            background: oklch(0.12 0.02 255 / 0.95);
+            background: var(--bg-header);
             backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             border-bottom: 1px solid var(--border);
-            padding: 1rem 2rem;
+            padding: 1rem 2.5rem;
             display: flex;
             align-items: center;
             justify-content: space-between;
             position: sticky;
             top: 0;
             z-index: 100;
+            box-shadow: var(--shadow-sm);
         }
 
         .brand {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 0.85rem;
         }
 
         .brand-logo {
-            width: 38px;
-            height: 38px;
-            background: linear-gradient(135deg, var(--accent-cyan), oklch(0.55 0.20 260));
-            border-radius: 0.6rem;
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent-indigo), var(--accent-cyan));
+            border-radius: 0.7rem;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 0 16px oklch(0.75 0.16 220 / 0.35);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+            transition: transform 200ms var(--ease-out);
+        }
+
+        .brand-logo:hover {
+            transform: scale(1.04);
         }
 
         .brand-logo svg {
             width: 22px;
             height: 22px;
             fill: none;
-            stroke: #000;
+            stroke: #ffffff;
             stroke-width: 2.5;
         }
 
         .brand-title {
             font-size: 1.15rem;
-            font-weight: 700;
+            font-weight: 800;
             letter-spacing: -0.02em;
             color: var(--text-main);
         }
@@ -114,17 +139,17 @@ _HTML_PAGE = """<!DOCTYPE html>
         }
 
         .security-badge {
-            background: oklch(0.72 0.17 150 / 0.12);
-            border: 1px solid oklch(0.72 0.17 150 / 0.4);
+            background: var(--accent-green-bg);
+            border: 1px solid rgba(5, 150, 105, 0.25);
             color: var(--accent-green);
-            padding: 0.35rem 0.85rem;
+            padding: 0.4rem 0.9rem;
             border-radius: 2rem;
             font-size: 0.75rem;
-            font-weight: 600;
+            font-weight: 700;
             letter-spacing: 0.03em;
             display: flex;
             align-items: center;
-            gap: 0.4rem;
+            gap: 0.5rem;
         }
 
         .pulse-dot {
@@ -133,7 +158,7 @@ _HTML_PAGE = """<!DOCTYPE html>
             background-color: var(--accent-green);
             border-radius: 50%;
             box-shadow: 0 0 8px var(--accent-green);
-            animation: pulse 2s infinite;
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
 
         @keyframes pulse {
@@ -143,10 +168,10 @@ _HTML_PAGE = """<!DOCTYPE html>
 
         /* Layout Container */
         main {
-            max-width: 1300px;
+            max-width: 1320px;
             width: 100%;
             margin: 0 auto;
-            padding: 2rem;
+            padding: 2.5rem 2rem;
             display: flex;
             flex-direction: column;
             gap: 2rem;
@@ -158,16 +183,17 @@ _HTML_PAGE = """<!DOCTYPE html>
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 1rem;
-            padding: 1.75rem;
-            box-shadow: 0 10px 30px oklch(0 0 0 / 0.3);
+            padding: 2rem;
+            box-shadow: var(--shadow-md);
             display: flex;
             flex-direction: column;
-            gap: 1.25rem;
-            transition: border-color 0.2s;
+            gap: 1.5rem;
+            transition: border-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
         }
 
         .control-panel:focus-within {
-            border-color: var(--border-glow);
+            border-color: var(--border-focus);
+            box-shadow: var(--shadow-lg);
         }
 
         .panel-header {
@@ -182,7 +208,7 @@ _HTML_PAGE = """<!DOCTYPE html>
             color: var(--text-main);
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.6rem;
         }
 
         .quick-paths {
@@ -192,22 +218,26 @@ _HTML_PAGE = """<!DOCTYPE html>
         }
 
         .path-pill {
-            background: oklch(0.22 0.02 255);
+            background: var(--bg-subtle);
             border: 1px solid var(--border);
             color: var(--text-muted);
-            padding: 0.25rem 0.65rem;
-            border-radius: 0.4rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 0.5rem;
             font-size: 0.75rem;
-            font-weight: 500;
+            font-weight: 600;
             font-family: var(--font-mono);
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: all 160ms var(--ease-out), transform 120ms var(--ease-out);
         }
 
         .path-pill:hover {
-            background: oklch(0.28 0.03 255);
+            background: #e2e8f0;
             color: var(--text-main);
-            border-color: var(--accent-cyan);
+            border-color: var(--border-hover);
+        }
+
+        .path-pill:active {
+            transform: scale(0.97);
         }
 
         .input-group {
@@ -223,47 +253,47 @@ _HTML_PAGE = """<!DOCTYPE html>
 
         .input-wrapper input {
             width: 100%;
-            padding: 0.85rem 1.1rem;
-            background: oklch(0.12 0.02 255);
+            padding: 0.85rem 1.25rem;
+            background: var(--bg-card);
             border: 1px solid var(--border);
-            border-radius: 0.65rem;
+            border-radius: 0.75rem;
             color: var(--text-main);
             font-family: var(--font-mono);
             font-size: 0.9rem;
             outline: none;
-            transition: border-color 0.2s, box-shadow 0.2s;
+            box-shadow: var(--shadow-sm);
+            transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
         }
 
         .input-wrapper input:focus {
-            border-color: var(--accent-cyan);
-            box-shadow: 0 0 0 3px oklch(0.75 0.16 220 / 0.15);
+            border-color: var(--accent-indigo);
+            box-shadow: 0 0 0 3px var(--accent-indigo-light);
         }
 
         .btn-scan {
-            background: linear-gradient(135deg, var(--accent-cyan), oklch(0.68 0.18 230));
-            color: #040914;
+            background: var(--accent-indigo);
+            color: #ffffff;
             font-weight: 700;
-            font-size: 0.95rem;
+            font-size: 0.925rem;
             padding: 0.85rem 2rem;
             border: none;
-            border-radius: 0.65rem;
+            border-radius: 0.75rem;
             cursor: pointer;
             display: flex;
             align-items: center;
             gap: 0.6rem;
-            box-shadow: 0 4px 14px oklch(0.75 0.16 220 / 0.3);
-            transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+            box-shadow: 0 4px 14px rgba(79, 70, 229, 0.25);
+            transition: background-color 160ms var(--ease-out), transform 120ms var(--ease-out), box-shadow 160ms var(--ease-out);
             white-space: nowrap;
         }
 
         .btn-scan:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 20px oklch(0.75 0.16 220 / 0.45);
-            background: linear-gradient(135deg, var(--accent-cyan-hover), oklch(0.72 0.18 225));
+            background-color: var(--accent-indigo-hover);
+            box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
         }
 
         .btn-scan:active {
-            transform: translateY(0);
+            transform: scale(0.97);
         }
 
         .btn-scan svg {
@@ -278,47 +308,54 @@ _HTML_PAGE = """<!DOCTYPE html>
         .settings-bar {
             display: flex;
             align-items: center;
-            gap: 1.5rem;
+            gap: 2rem;
             font-size: 0.825rem;
             color: var(--text-muted);
-            padding-top: 0.5rem;
+            padding-top: 0.75rem;
             border-top: 1px dashed var(--border);
         }
 
         .checkbox-label {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.6rem;
             cursor: pointer;
             user-select: none;
+            font-weight: 500;
+            transition: color 160ms var(--ease-out);
+        }
+
+        .checkbox-label:hover {
+            color: var(--text-main);
         }
 
         .checkbox-label input {
-            accent-color: var(--accent-cyan);
-            width: 15px;
-            height: 15px;
+            accent-color: var(--accent-indigo);
+            width: 16px;
+            height: 16px;
             cursor: pointer;
+            border-radius: 0.25rem;
         }
 
         /* Scan Status Bar */
         #statusBox {
             display: none;
-            padding: 0.85rem 1.1rem;
-            border-radius: 0.65rem;
+            padding: 0.9rem 1.25rem;
+            border-radius: 0.75rem;
             font-size: 0.875rem;
-            font-weight: 500;
-            display: flex;
+            font-weight: 600;
             align-items: center;
             gap: 0.75rem;
+            transition: all 200ms var(--ease-out);
         }
 
         .spinner {
             width: 18px;
             height: 18px;
-            border: 2px solid oklch(0.75 0.16 220 / 0.3);
-            border-top-color: var(--accent-cyan);
+            border: 2.5px solid rgba(79, 70, 229, 0.2);
+            border-top-color: var(--accent-indigo);
             border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+            animation: spin 0.7s linear infinite;
         }
 
         @keyframes spin {
@@ -328,7 +365,7 @@ _HTML_PAGE = """<!DOCTYPE html>
         /* KPI Stat Cards Grid */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
             gap: 1.25rem;
         }
 
@@ -336,10 +373,18 @@ _HTML_PAGE = """<!DOCTYPE html>
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 0.85rem;
-            padding: 1.25rem 1.5rem;
+            padding: 1.5rem;
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
+            gap: 0.4rem;
+            box-shadow: var(--shadow-md);
+            transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out), border-color 200ms var(--ease-out);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--border-hover);
         }
 
         .stat-label {
@@ -347,11 +392,11 @@ _HTML_PAGE = """<!DOCTYPE html>
             text-transform: uppercase;
             letter-spacing: 0.05em;
             color: var(--text-muted);
-            font-weight: 600;
+            font-weight: 700;
         }
 
         .stat-value {
-            font-size: 1.8rem;
+            font-size: 2.25rem;
             font-weight: 800;
             letter-spacing: -0.03em;
             color: var(--text-main);
@@ -361,28 +406,30 @@ _HTML_PAGE = """<!DOCTYPE html>
         .stat-desc {
             font-size: 0.8rem;
             color: var(--text-dim);
+            font-weight: 500;
         }
 
         .badge-risk {
             display: inline-flex;
             align-items: center;
-            padding: 0.25rem 0.75rem;
-            border-radius: 0.4rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 0.5rem;
             font-size: 0.825rem;
             font-weight: 700;
             width: fit-content;
+            letter-spacing: 0.02em;
         }
 
         .badge-risk.critical {
-            background: oklch(0.65 0.22 25 / 0.15);
+            background: var(--accent-red-bg);
             color: var(--accent-red);
-            border: 1px solid oklch(0.65 0.22 25 / 0.4);
+            border: 1px solid rgba(225, 29, 72, 0.25);
         }
 
         .badge-risk.low {
-            background: oklch(0.72 0.17 150 / 0.15);
+            background: var(--accent-green-bg);
             color: var(--accent-green);
-            border: 1px solid oklch(0.72 0.17 150 / 0.4);
+            border: 1px solid rgba(5, 150, 105, 0.25);
         }
 
         /* Report Frame Container */
@@ -391,15 +438,15 @@ _HTML_PAGE = """<!DOCTYPE html>
             border: 1px solid var(--border);
             border-radius: 1rem;
             overflow: hidden;
-            box-shadow: 0 10px 30px oklch(0 0 0 / 0.3);
+            box-shadow: var(--shadow-md);
             display: flex;
             flex-direction: column;
-            min-height: 750px;
+            min-height: 780px;
         }
 
         .report-toolbar {
-            background: oklch(0.12 0.02 255);
-            padding: 0.85rem 1.5rem;
+            background: var(--bg-subtle);
+            padding: 1rem 1.75rem;
             border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
@@ -408,11 +455,11 @@ _HTML_PAGE = """<!DOCTYPE html>
 
         .toolbar-title {
             font-size: 0.875rem;
-            font-weight: 600;
-            color: var(--text-muted);
+            font-weight: 700;
+            color: var(--text-main);
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.6rem;
         }
 
         .toolbar-actions {
@@ -421,49 +468,54 @@ _HTML_PAGE = """<!DOCTYPE html>
         }
 
         .btn-action {
-            background: oklch(0.20 0.02 255);
+            background: var(--bg-card);
             border: 1px solid var(--border);
             color: var(--text-muted);
-            padding: 0.35rem 0.85rem;
-            border-radius: 0.4rem;
+            padding: 0.4rem 0.9rem;
+            border-radius: 0.5rem;
             font-size: 0.75rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.15s ease;
+            box-shadow: var(--shadow-sm);
+            transition: all 160ms var(--ease-out), transform 120ms var(--ease-out);
         }
 
         .btn-action:hover {
-            background: oklch(0.26 0.03 255);
+            background: #ffffff;
             color: var(--text-main);
-            border-color: var(--accent-cyan);
+            border-color: var(--accent-indigo);
+        }
+
+        .btn-action:active {
+            transform: scale(0.97);
         }
 
         iframe {
             width: 100%;
-            height: 750px;
+            height: 780px;
             border: none;
-            background: #0f172a;
+            background: #ffffff;
         }
 
         .empty-state {
-            padding: 5rem 2rem;
+            padding: 6rem 2rem;
             text-align: center;
             color: var(--text-muted);
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 1rem;
+            gap: 1.25rem;
         }
 
         .empty-icon {
-            width: 56px;
-            height: 56px;
-            background: oklch(0.20 0.025 255);
+            width: 60px;
+            height: 60px;
+            background: var(--bg-subtle);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--accent-cyan);
+            color: var(--accent-indigo);
             border: 1px solid var(--border);
         }
 
@@ -487,7 +539,7 @@ _HTML_PAGE = """<!DOCTYPE html>
             </div>
             <div>
                 <div class="brand-title">PHI Compliance Control Tower</div>
-                <div class="brand-subtitle">DPDP Act Data Sanitization & Audit Engine v3.0</div>
+                <div class="brand-subtitle">DPDP Act Data Sanitization & Audit Engine v4.0</div>
             </div>
         </div>
         
@@ -502,7 +554,7 @@ _HTML_PAGE = """<!DOCTYPE html>
         <section class="control-panel">
             <div class="panel-header">
                 <div class="panel-title">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-indigo)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="11" cy="11" r="8"></circle>
                         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                     </svg>
@@ -510,7 +562,7 @@ _HTML_PAGE = """<!DOCTYPE html>
                 </div>
                 
                 <div class="quick-paths">
-                    <span style="font-size: 0.75rem; color: var(--text-dim);">Quick Select:</span>
+                    <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: 600;">Quick Select:</span>
                     <button class="path-pill" onclick="setPath('sample_data')">sample_data</button>
                     <button class="path-pill" onclick="setPath('sample_data/contacts.csv')">contacts.csv</button>
                     <button class="path-pill" onclick="setPath('.')">Current Dir (.)</button>
@@ -558,7 +610,7 @@ _HTML_PAGE = """<!DOCTYPE html>
             <div class="stat-card">
                 <div class="stat-label">Total PII Findings</div>
                 <div id="metricFindings" class="stat-value">0</div>
-                <div class="stat-desc">Aadhaar, PAN, Passport, Voter ID, Mobile</div>
+                <div class="stat-desc">Aadhaar, PAN, Passport, Voter ID, Mobile, Bank/IFSC</div>
             </div>
 
             <div class="stat-card">
@@ -619,9 +671,9 @@ _HTML_PAGE = """<!DOCTYPE html>
             if (!path) return;
 
             statusBox.style.display = 'flex';
-            statusBox.style.background = 'oklch(0.20 0.025 255)';
-            statusBox.style.color = 'var(--accent-cyan)';
-            statusText.innerText = 'Scanning path in progress... Please wait...';
+            statusBox.style.background = '#e0e7ff';
+            statusBox.style.color = '#3730a3';
+            statusText.innerText = 'Scanning target path in progress... Please wait...';
 
             try {
                 const res = await fetch('/api/scan', {
@@ -635,12 +687,12 @@ _HTML_PAGE = """<!DOCTYPE html>
                 const data = await res.json();
                 
                 if (data.error) {
-                    statusBox.style.background = 'oklch(0.65 0.22 25 / 0.15)';
-                    statusBox.style.color = 'var(--accent-red)';
+                    statusBox.style.background = '#ffe4e6';
+                    statusBox.style.color = '#be123c';
                     statusText.innerText = 'Scan Error: ' + data.error;
                 } else {
-                    statusBox.style.background = 'oklch(0.72 0.17 150 / 0.15)';
-                    statusBox.style.color = 'var(--accent-green)';
+                    statusBox.style.background = '#d1fae5';
+                    statusBox.style.color = '#047857';
                     statusText.innerText = 'Scan Completed Successfully! Found ' + data.total_findings + ' findings in ' + data.duration_sec + 's.';
                     
                     // Update KPI Cards
@@ -666,8 +718,8 @@ _HTML_PAGE = """<!DOCTYPE html>
                     iframe.src = '/api/report?' + Date.now();
                 }
             } catch (err) {
-                statusBox.style.background = 'oklch(0.65 0.22 25 / 0.15)';
-                statusBox.style.color = 'var(--accent-red)';
+                statusBox.style.background = '#ffe4e6';
+                statusBox.style.color = '#be123c';
                 statusText.innerText = 'Failed to execute scan: ' + err;
             }
         }
@@ -723,9 +775,6 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 data = json.loads(body.decode("utf-8"))
                 raw_path = data.get("path", "sample_data")
 
-                # --- path-traversal guard ---
-                # Resolve to absolute path and verify it does not escape
-                # the current working directory or temp dir.
                 try:
                     target_path = Path(raw_path).resolve()
                 except Exception:
@@ -738,7 +787,6 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 in_tmp = tmp in target_path.parents or target_path.is_relative_to(tmp)
 
                 if not (in_cwd or in_tmp or target_path.is_relative_to(cwd)):
-                    # Allow absolute paths that are under cwd or /tmp — reject everything else
                     self._send_json({"error": "Path outside allowed directory. Supply a relative path or one under the working directory."}, status=403)
                     return
 
@@ -753,14 +801,11 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 findings = list(engine.scan_path_parallel(target_path) if target_path.is_dir() else engine.scan_file(target_path))
                 dur = round(time.perf_counter() - t0, 3)
 
-                # Execute redaction if requested and target is a single file
                 if do_redact and target_path.is_file():
                     from .redactor import redact_file
                     redact_out = target_path.parent / f"redacted_{target_path.name}"
                     redact_file(target_path, redact_out)
 
-                # Write temp report to system temp dir (not the scan target dir)
-                # to avoid PermissionError on read-only scan directories.
                 with tempfile.NamedTemporaryFile(
                     mode="w", suffix=".html", delete=False, encoding="utf-8"
                 ) as tmp_file:
@@ -786,23 +831,17 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
 
 
 def launch_dashboard(port: int = 8080, open_browser: bool = True) -> None:
-    """Launch the built-in local web dashboard on http://localhost:port.
-
-    Binds to 127.0.0.1 only (loopback) — never reachable from other machines
-    on the same network, preserving the air-gapped security guarantee.
-    """
-    # Loopback-only: never bind to "" (all interfaces) as that exposes the
-    # scan API (arbitrary file read) to anyone on the same LAN segment.
+    """Launch the built-in local web dashboard on http://localhost:port."""
     server_address = ("127.0.0.1", port)
     with socketserver.TCPServer(server_address, DashboardHandler) as httpd:
         url = f"http://localhost:{port}"
         print(f"========================================================")
         print(f"   PHI COMPLIANCE SCANNER — LOCAL WEB DASHBOARD        ")
         print(f"========================================================")
-        print(f"  Dashboard URL : {url}")
-        print(f"  Security Mode : 127.0.0.1 loopback-only (LAN-isolated)")
-        print(f"  Press Ctrl+C to stop the dashboard server.")
+        print(f"   Access Dashboard: {url}")
+        print(f"   Mode            : 100% Offline (Air-Gapped Loopback)")
         print(f"========================================================")
+        print(f"Press Ctrl+C to terminate the dashboard server.")
 
         if open_browser:
             webbrowser.open(url)
@@ -810,4 +849,4 @@ def launch_dashboard(port: int = 8080, open_browser: bool = True) -> None:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\nDashboard server stopped.")
+            print("\nShutting down dashboard server.")
