@@ -54,6 +54,10 @@ _INV = [0, 4, 3, 2, 1, 9, 8, 7, 6, 5]
 # First digit constrained to [2-9] per UIDAI assignment ranges.
 _PATTERN = re.compile(r"(?<!\d)[2-9]\d{11}(?!\d)")
 
+# Wider set of separators found in real Indian spreadsheets.
+# Includes dots (2345.6789.0123), underscores, slashes, pipes, en/em dashes.
+_SEPARATORS = re.compile(r"[\s\-\u2013\u2014\.\/_|]+")
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -119,15 +123,15 @@ def _strip_phone_prefixes(text: str) -> str:
 def find_aadhaar(text: str) -> list[AadhaarMatch]:
     """Return all Aadhaar candidates found in *text*, each with a confidence tier.
 
-    Strips common separators (spaces, hyphens, en-dashes) before matching so
-    that formatted numbers like ``2345 6789 0123`` are caught.
+    Strips common separators (spaces, hyphens, dots, underscores, en-dashes)
+    before matching so that formatted numbers in any common style are caught.
     Phone-number country-code prefixes (+91, 91) are removed first to prevent
     false positives from Indian mobile numbers.
     """
     results: list[AadhaarMatch] = []
 
-    # Strip separators, then remove phone prefixes before pattern matching
-    stripped = re.sub(r"[\s\-\u2013]+", "", text)
+    # Strip all common separators, then remove phone prefixes
+    stripped = _SEPARATORS.sub("", text)
     stripped = _strip_phone_prefixes(stripped)
 
     for m in _PATTERN.finditer(stripped):
@@ -141,4 +145,3 @@ def find_aadhaar(text: str) -> list[AadhaarMatch]:
             end=m.end(),
         ))
     return results
-

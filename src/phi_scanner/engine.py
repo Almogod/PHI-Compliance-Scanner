@@ -1,4 +1,11 @@
-"""Scan engine — orchestrates ingestion → recognition → confidence tiering.
+"""Scan engine — orchestrates ingestion → normalisation → recognition → context boosting.
+
+v2 improvements over v1:
+  - Text normalisation (Excel floats, unicode cleanup, zero-width chars)
+  - Multi-value cell splitting (cells with commas/semicolons get sub-scanned)
+  - Context-aware confidence boosting (column headers, inline labels)
+  - Partially-masked identifier detection (XXXX XXXX 1234 is still PII)
+  - Header row extraction for column-level context signals
 
 No network calls are made in this module or anything it imports.
 Scanned content exists in memory only for the duration of the scan and is not
@@ -13,6 +20,13 @@ from typing import Iterator
 from .ingestion.base import SourceLocation
 from .ingestion.csv_ingester import CsvIngester
 from .ingestion.xlsx_ingester import XlsxIngester
+from .normalizer import normalise_cell
+from .context import (
+    boost_confidence,
+    detect_column_entity,
+    detect_inline_labels,
+    detect_masked_identifiers,
+)
 from .recognizers.aadhaar import find_aadhaar
 from .recognizers.pan import find_pan
 from .recognizers.gstin import find_gstin
@@ -26,7 +40,7 @@ from .recognizers.mobile import find_mobile
 class Finding:
     """One detected identifier instance with its full provenance."""
 
-    entity_type: str       # "AADHAAR" | "PAN" | "GSTIN" | "IN_MOBILE"
+    entity_type: str       # "AADHAAR" | "PAN" | "GSTIN" | "IN_MOBILE" | "*_MASKED"
     masked_value: str      # value with most digits/chars redacted
     confidence: str        # "HIGH" | "MEDIUM" | "LOW"
     location: SourceLocation
@@ -48,7 +62,7 @@ class Finding:
 _INGESTERS: dict[str, object] = {
     ".csv": CsvIngester(),
     ".xlsx": XlsxIngester(),
-    ".xls": XlsxIngester(),  # openpyxl can read legacy xls via compatibility
+    ".xls": XlsxIngester(),
 }
 
 
@@ -56,11 +70,15 @@ class ScanEngine:
     """Walks a file or directory tree, scans every supported file, and yields
     ``Finding`` objects.
 
-    Architecture note (architecture.md §2): recognizers are called directly
-    here without going through Presidio's full ``AnalyzerEngine`` because v1
-    is pattern-only (no spaCy NLP). The recognizer classes are written as
-    standalone functions that are trivially composable with Presidio's
-    ``PatternRecognizer`` base if/when the NLP pipeline is enabled in Phase 3.
+    v2 scanning pipeline per cell:
+      1. Normalise text (unicode, Excel floats)
+      2. Split multi-value cells into sub-chunks
+      3. Detect column-level context (header → entity type mapping)
+      4. Detect inline labels ("PAN:", "Aadhaar No:", etc.)
+      5. Run all recognizers on each chunk
+      6. Boost confidence using context signals
+      7. Detect partially-masked identifiers
+      8. Yield all findings with boosted confidence
     """
 
     def scan_file(self, path: Path) -> Iterator[Finding]:
@@ -68,10 +86,10 @@ class ScanEngine:
         suffix = path.suffix.lower()
         ingester = _INGESTERS.get(suffix)
         if ingester is None:
-            return  # unsupported format — silently skip (v1 is CSV/XLSX only)
+            return  # unsupported format — silently skip
 
         for cell_text, location in ingester.ingest(path):
-            yield from self._apply_recognizers(cell_text, location)
+            yield from self._scan_cell(cell_text, location)
 
     def scan_path(self, path: Path) -> Iterator[Finding]:
         """Recursively scan a file or all supported files under a directory."""
@@ -86,17 +104,83 @@ class ScanEngine:
 
     # ------------------------------------------------------------------
 
-    def _apply_recognizers(
+    def _scan_cell(
         self, text: str, location: SourceLocation
     ) -> Iterator[Finding]:
-        for match in find_aadhaar(text):
-            yield Finding("AADHAAR", match.masked_value, match.confidence.value, location)
+        """Full v2 scanning pipeline for a single cell."""
 
-        for match in find_pan(text):
-            yield Finding("PAN", match.masked_value, match.confidence.value, location)
+        # Step 1+2: Normalise and split multi-value cells
+        chunks = normalise_cell(text)
 
-        for match in find_gstin(text):
-            yield Finding("GSTIN", match.masked_value, match.confidence.value, location)
+        # Step 3: Column-level context
+        column_entity = detect_column_entity(location.column)
 
-        for match in find_mobile(text):
-            yield Finding("IN_MOBILE", match.masked_value, match.confidence.value, location)
+        # Deduplicate findings across chunks (original + sub-chunks)
+        seen: set[tuple[str, str]] = set()  # (entity_type, masked_value)
+
+        for chunk in chunks:
+            # Step 4: Inline label context
+            inline_labels = detect_inline_labels(chunk)
+
+            # Step 5: Run all recognizers
+            for match in find_aadhaar(chunk):
+                key = ("AADHAAR", match.masked_value)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                # Step 6: Context-boosted confidence
+                confidence = boost_confidence(
+                    match.confidence.value, "AADHAAR",
+                    column_entity, inline_labels,
+                )
+                yield Finding("AADHAAR", match.masked_value, confidence, location)
+
+            for match in find_pan(chunk):
+                key = ("PAN", match.masked_value)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                confidence = boost_confidence(
+                    match.confidence.value, "PAN",
+                    column_entity, inline_labels,
+                )
+                yield Finding("PAN", match.masked_value, confidence, location)
+
+            for match in find_gstin(chunk):
+                key = ("GSTIN", match.masked_value)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                confidence = boost_confidence(
+                    match.confidence.value, "GSTIN",
+                    column_entity, inline_labels,
+                )
+                yield Finding("GSTIN", match.masked_value, confidence, location)
+
+            for match in find_mobile(chunk):
+                key = ("IN_MOBILE", match.masked_value)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                confidence = boost_confidence(
+                    match.confidence.value, "IN_MOBILE",
+                    column_entity, inline_labels,
+                )
+                yield Finding("IN_MOBILE", match.masked_value, confidence, location)
+
+            # Step 7: Detect partially-masked identifiers
+            for masked in detect_masked_identifiers(chunk):
+                key = (masked["entity_type"], masked["masked_value"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                yield Finding(
+                    masked["entity_type"],
+                    masked["masked_value"],
+                    masked["confidence"],
+                    location,
+                )
