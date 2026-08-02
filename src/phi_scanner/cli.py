@@ -14,7 +14,7 @@ from pathlib import Path
 import click
 
 from .engine import Finding, ScanEngine
-from .reporter import write_csv, write_json
+from .reporter import write_csv, write_html, write_json
 
 _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
 
@@ -25,11 +25,11 @@ _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
     "--output", "-o",
     default="report.csv",
     show_default=True,
-    help="Output file path (.csv or .json).",
+    help="Output file path (.csv, .json, or .html).",
 )
 @click.option(
     "--format", "fmt",
-    type=click.Choice(["csv", "json"], case_sensitive=False),
+    type=click.Choice(["csv", "json", "html"], case_sensitive=False),
     default=None,
     help="Output format. Inferred from --output extension if not set.",
 )
@@ -90,7 +90,13 @@ def main(
 
     # Infer format from extension if not explicitly set
     if fmt is None:
-        fmt = "json" if output_path.suffix.lower() == ".json" else "csv"
+        ext = output_path.suffix.lower()
+        if ext == ".json":
+            fmt = "json"
+        elif ext in (".html", ".htm"):
+            fmt = "html"
+        else:
+            fmt = "csv"
 
     min_rank = _CONFIDENCE_ORDER[min_confidence.upper()]
     engine = ScanEngine()
@@ -132,6 +138,8 @@ def main(
 
     if fmt == "json":
         write_json(findings, output_path)
+    elif fmt == "html":
+        write_html(findings, output_path, target_path_str=str(path.resolve()))
     else:
         write_csv(findings, output_path)
 

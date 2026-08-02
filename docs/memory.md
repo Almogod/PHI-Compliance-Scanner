@@ -5,10 +5,11 @@
 ---
 
 ## Current status
-**As of 2026-08-02:** Parallel Agent Orchestrator Deployed.
-- `ParallelAgentOrchestrator` (`src/phi_scanner/agent_orchestrator.py`) manages concurrent Producer-Consumer worker streams with specialized entity agents (`AadhaarAgent`, `PanAgent`, `GstinAgent`, `MobileAgent`).
-- CLI supports `--use-agents` flag for concurrent MapReduce entity scanning.
-- 174/174 tests passing.
+**As of 2026-08-02:** Phase 4 (Reporting Polish) Complete.
+- Interactive Executive Audit Trail HTML reporter (`write_html`) implemented in `src/phi_scanner/reporter.py`.
+- CLI supports `-o audit_report.html` and `--format html`.
+- Standalone zero-network visual audit dashboard: risk badges, finding distribution bar graphs, and client-side live search/filtering.
+- 175/175 tests passing.
 
 
 

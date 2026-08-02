@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHI Compliance Audit Report</title>
+    <style>
+        :root {
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-hover: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --primary: #38bdf8;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --success: #10b981;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            padding: 2rem;
+            line-height: 1.5;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        h1 { font-size: 1.875rem; font-weight: 700; color: var(--text-main); }
+        .subtitle { color: var(--text-muted); font-size: 0.875rem; margin-top: 0.25rem; }
+
+        .badge {
+            display: inline-block;
+            padding: 0.35rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .risk-high { background-color: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+        .risk-medium { background-color: rgba(245, 158, 11, 0.2); color: var(--warning); border: 1px solid var(--warning); }
+        .risk-low { background-color: rgba(16, 185, 129, 0.2); color: var(--success); border: 1px solid var(--success); }
+
+        .conf-high { background-color: rgba(239, 68, 68, 0.15); color: #fca5a5; }
+        .conf-medium { background-color: rgba(245, 158, 11, 0.15); color: #fde047; }
+        .conf-low { background-color: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background-color: var(--bg-card);
+            padding: 1.25rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+        }
+
+        .stat-label { color: var(--text-muted); font-size: 0.875rem; font-weight: 500; }
+        .stat-value { font-size: 2rem; font-weight: 700; margin-top: 0.25rem; color: var(--text-main); }
+
+        .section-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        @media (max-width: 900px) { .section-grid { grid-template-columns: 1fr; } }
+
+        .card {
+            background-color: var(--bg-card);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+        }
+
+        .card-title { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+
+        .chart-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+        .chart-label { width: 110px; font-size: 0.875rem; font-weight: 600; color: var(--text-muted); }
+        .chart-bar-bg { flex: 1; background-color: var(--bg-main); height: 12px; border-radius: 6px; overflow: hidden; }
+        .chart-bar-fill { background: linear-gradient(90deg, #38bdf8, #818cf8); height: 100%; border-radius: 6px; transition: width 0.3s ease; }
+        .chart-val { width: 35px; text-align: right; font-weight: 700; font-size: 0.875rem; }
+
+        .toolbar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .search-input {
+            background-color: var(--bg-main);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            width: 250px;
+        }
+        .filter-btn {
+            background-color: var(--bg-main);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .filter-btn.active { background-color: var(--primary); color: #000; border-color: var(--primary); }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+        th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { background-color: var(--bg-main); color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
+        tr:hover { background-color: var(--bg-hover); }
+
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 600; color: #a5f3fc; }
+        .file-path { word-break: break-all; max-width: 320px; font-size: 0.8125rem; color: #cbd5e1; }
+        .location-tag { background: rgba(51, 65, 85, 0.5); padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem; }
+
+        .entity-tag { font-weight: 700; font-size: 0.75rem; padding: 0.2rem 0.4rem; border-radius: 0.25rem; }
+        .entity-aadhaar { background-color: rgba(56, 189, 248, 0.2); color: #7dd3fc; }
+        .entity-pan { background-color: rgba(168, 85, 247, 0.2); color: #c084fc; }
+        .entity-gstin { background-color: rgba(236, 72, 153, 0.2); color: #f472b6; }
+        .entity-in_mobile { background-color: rgba(52, 211, 153, 0.2); color: #6ee7b7; }
+
+        footer {
+            margin-top: 3rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>PHI Compliance Audit Report</h1>
+                <div class="subtitle">Target: C:\Users\Hp\Downloads\PHI-Compliance-Scanner\sample_data | Generated by PHI Compliance Scanner</div>
+            </div>
+            <div>
+                <span class="badge risk-high">CRITICAL RISK — ACTION REQUIRED</span>
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Findings</div>
+                <div class="stat-value">51</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">High Confidence</div>
+                <div class="stat-value" style="color: var(--danger);">38</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Affected Files</div>
+                <div class="stat-value">3</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Audit Status</div>
+                <div class="stat-value" style="font-size: 1.25rem; font-weight: 600; margin-top: 0.5rem;">Verified PII exposures were detected in local files. Immediate remediation recommended.</div>
+            </div>
+        </div>
+
+        <div class="section-grid">
+            <div class="card">
+                <div class="card-title">Finding Distribution by Entity Type</div>
+                
+        <div class="chart-row">
+            <span class="chart-label">AADHAAR</span>
+            <div class="chart-bar-bg">
+                <div class="chart-bar-fill" style="width: 82.4%;"></div>
+            </div>
+            <span class="chart-val">14</span>
+        </div>
+        
+
+        <div class="chart-row">
+            <span class="chart-label">AADHAAR_MASKED</span>
+            <div class="chart-bar-bg">
+                <div class="chart-bar-fill" style="width: 11.8%;"></div>
+            </div>
+            <span class="chart-val">2</span>
+        </div>
+        
+
+        <div class="chart-row">
+            <span class="chart-label">GSTIN</span>
+            <div class="chart-bar-bg">
+                <div class="chart-bar-fill" style="width: 23.5%;"></div>
+            </div>
+            <span class="chart-val">4</span>
+        </div>
+        
+
+        <div class="chart-row">
+            <span class="chart-label">IN_MOBILE</span>
+            <div class="chart-bar-bg">
+                <div class="chart-bar-fill" style="width: 100.0%;"></div>
+            </div>
+            <span class="chart-val">17</span>
+        </div>
+        
+
+        <div class="chart-row">
+            <span class="chart-label">PAN</span>
+            <div class="chart-bar-bg">
+                <div class="chart-bar-fill" style="width: 70.6%;"></div>
+            </div>
+            <span class="chart-val">12</span>
+        </div>
+        
+
+        <div class="chart-row">
+            <span class="chart-label">PAN_MASKED</span>
+            <div class="chart-bar-bg">
+                <div class="chart-bar-fill" style="width: 11.8%;"></div>
+            </div>
+            <span class="chart-val">2</span>
+        </div>
+        
+            </div>
+            <div class="card">
+                <div class="card-title">Compliance Assurance</div>
+                <p style="font-size: 0.875rem; color: var(--text-muted); line-height: 1.6;">
+                    🔒 <strong>Zero PII Persistence Guarantee:</strong><br>
+                    This audit report contains only masked representation strings (e.g., <code>XXXX XXXX 1234</code>).
+                    No plain-text Aadhaar, PAN, GSTIN, or phone numbers were written to disk or transmitted off this device.
+                </p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Detailed Audit Trail</div>
+            <div class="toolbar">
+                <input type="text" id="searchInput" class="search-input" placeholder="Search files or values...">
+                <button class="filter-btn active" onclick="filterEntity('ALL')">All Types</button>
+                <button class="filter-btn" onclick="filterEntity('AADHAAR')">Aadhaar</button>
+                <button class="filter-btn" onclick="filterEntity('PAN')">PAN</button>
+                <button class="filter-btn" onclick="filterEntity('GSTIN')">GSTIN</button>
+                <button class="filter-btn" onclick="filterEntity('IN_MOBILE')">Mobile</button>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>File Location</th>
+                        <th>Position</th>
+                        <th>Entity Type</th>
+                        <th>Masked Value</th>
+                        <th>Confidence</th>
+                    </tr>
+                </thead>
+                <tbody id="findingsBody">
+                    
+        <tr data-entity="IN_MOBILE" data-confidence="HIGH">
+            <td>1</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 2 Col mobile</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX3210</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>2</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 2 Col aadhaar_no</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 0124</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>3</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 2 Col pan_no</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX1234X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="HIGH">
+            <td>4</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 3 Col mobile</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX2109</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>5</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 3 Col aadhaar_no</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 1238</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>6</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 3 Col pan_no</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX5678X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN_MASKED" data-confidence="LOW">
+            <td>7</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 3 Col pan_no</span></td>
+            <td><span class="entity-tag entity-pan_masked">PAN_MASKED</span></td>
+            <td class="mono">XYZCA5678F</td>
+            <td><span class="badge conf-low">LOW</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="HIGH">
+            <td>8</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 4 Col mobile</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX1098</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>9</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 4 Col aadhaar_no</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 2341</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>10</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 4 Col pan_no</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX2345X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="HIGH">
+            <td>11</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 5 Col mobile</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX0987</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>12</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 5 Col pan_no</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX6789X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="HIGH">
+            <td>13</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 6 Col mobile</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX6789</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>14</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 6 Col aadhaar_no</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 3458</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="HIGH">
+            <td>15</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 7 Col mobile</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX3210</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="HIGH">
+            <td>16</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 7 Col mobile</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX2109</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>17</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 7 Col aadhaar_no</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 0124</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>18</td>
+            <td class="file-path">sample_data\contacts.csv</td>
+            <td><span class="location-tag">Row 7 Col pan_no</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX1234X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>19</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 2 Col C (Employees)</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 0124</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>20</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 2 Col D (Employees)</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX1234X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="GSTIN" data-confidence="HIGH">
+            <td>21</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 2 Col E (Employees)</span></td>
+            <td><span class="entity-tag entity-gstin">GSTIN</span></td>
+            <td class="mono">29XXXXXXXXXX1ZA</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="MEDIUM">
+            <td>22</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 2 Col F (Employees)</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX3210</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>23</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 3 Col C (Employees)</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 1238</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>24</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 3 Col D (Employees)</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX5678X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN_MASKED" data-confidence="LOW">
+            <td>25</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 3 Col D (Employees)</span></td>
+            <td><span class="entity-tag entity-pan_masked">PAN_MASKED</span></td>
+            <td class="mono">XYZCA5678F</td>
+            <td><span class="badge conf-low">LOW</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="MEDIUM">
+            <td>26</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 3 Col F (Employees)</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX2109</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>27</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 4 Col C (Employees)</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 2341</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>28</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 4 Col D (Employees)</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX2345X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="GSTIN" data-confidence="HIGH">
+            <td>29</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 4 Col E (Employees)</span></td>
+            <td><span class="entity-tag entity-gstin">GSTIN</span></td>
+            <td class="mono">27XXXXXXXXXX1ZX</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="MEDIUM">
+            <td>30</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 4 Col F (Employees)</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX1098</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>31</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 5 Col D (Employees)</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX6789X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="MEDIUM">
+            <td>32</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 5 Col F (Employees)</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX0987</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>33</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 6 Col C (Employees)</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 3458</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="GSTIN" data-confidence="HIGH">
+            <td>34</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 6 Col E (Employees)</span></td>
+            <td><span class="entity-tag entity-gstin">GSTIN</span></td>
+            <td class="mono">33XXXXXXXXXX1Z5</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="MEDIUM">
+            <td>35</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 6 Col F (Employees)</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX6789</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>36</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 2 Col A (Messy)</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX1234X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="HIGH">
+            <td>37</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 2 Col A (Messy)</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX3210</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>38</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 3 Col A (Messy)</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 4560</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR_MASKED" data-confidence="MEDIUM">
+            <td>39</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 4 Col A (Messy)</span></td>
+            <td><span class="entity-tag entity-aadhaar_masked">AADHAAR_MASKED</span></td>
+            <td class="mono">XXXX XXXX 1234</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR_MASKED" data-confidence="MEDIUM">
+            <td>40</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 5 Col A (Messy)</span></td>
+            <td><span class="entity-tag entity-aadhaar_masked">AADHAAR_MASKED</span></td>
+            <td class="mono">**** **** 5678</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>41</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 6 Col A (Messy)</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX1234X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>42</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 7 Col A (Messy)</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 5674</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="MEDIUM">
+            <td>43</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 8 Col A (Messy)</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX3210</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="MEDIUM">
+            <td>44</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 9 Col A (Messy)</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX3210</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>45</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 2 Col A (Numeric_IDs)</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 6784</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="MEDIUM">
+            <td>46</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 2 Col B (Numeric_IDs)</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX3210</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>47</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 3 Col A (Numeric_IDs)</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 7892</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="IN_MOBILE" data-confidence="MEDIUM">
+            <td>48</td>
+            <td class="file-path">sample_data\messy_data.xlsx</td>
+            <td><span class="location-tag">Row 3 Col B (Numeric_IDs)</span></td>
+            <td><span class="entity-tag entity-in_mobile">IN_MOBILE</span></td>
+            <td class="mono">XXXXXX2109</td>
+            <td><span class="badge conf-medium">MEDIUM</span></td>
+        </tr>
+        
+
+        <tr data-entity="AADHAAR" data-confidence="HIGH">
+            <td>49</td>
+            <td class="file-path">sample_data\policy_agreement.docx</td>
+            <td><span class="location-tag">Row 2 Col paragraph</span></td>
+            <td><span class="entity-tag entity-aadhaar">AADHAAR</span></td>
+            <td class="mono">XXXX XXXX 0124</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="PAN" data-confidence="HIGH">
+            <td>50</td>
+            <td class="file-path">sample_data\policy_agreement.docx</td>
+            <td><span class="location-tag">Row 3 Col paragraph</span></td>
+            <td><span class="entity-tag entity-pan">PAN</span></td>
+            <td class="mono">XXXXX1234X</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+
+        <tr data-entity="GSTIN" data-confidence="HIGH">
+            <td>51</td>
+            <td class="file-path">sample_data\policy_agreement.docx</td>
+            <td><span class="location-tag">Row 2 Col B (Table 1)</span></td>
+            <td><span class="entity-tag entity-gstin">GSTIN</span></td>
+            <td class="mono">29XXXXXXXXXX1ZA</td>
+            <td><span class="badge conf-high">HIGH</span></td>
+        </tr>
+        
+                </tbody>
+            </table>
+        </div>
+
+        <footer>
+            PHI Compliance Scanner v3.0 — Air-gapped local compliance engine
+        </footer>
+    </div>
+
+    <script>
+        let currentFilter = 'ALL';
+        const searchInput = document.getElementById('searchInput');
+        const rows = document.querySelectorAll('#findingsBody tr');
+
+        function applyFilters() {
+            const searchVal = searchInput.value.toLowerCase();
+            rows.forEach(row => {
+                const entity = row.getAttribute('data-entity');
+                const text = row.innerText.toLowerCase();
+
+                const matchesFilter = (currentFilter === 'ALL' || entity === currentFilter);
+                const matchesSearch = text.includes(searchVal);
+
+                if (matchesFilter && matchesSearch) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        function filterEntity(entity) {
+            currentFilter = entity;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.innerText.toUpperCase().includes(entity) || (entity === 'ALL' && btn.innerText === 'All Types')) {
+                    btn.classList.add('active');
+                }
+            });
+            applyFilters();
+        }
+
+        searchInput.addEventListener('input', applyFilters);
+    </script>
+</body>
+</html>

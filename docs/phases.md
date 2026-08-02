@@ -56,13 +56,14 @@ Each phase has a goal, exit criteria, and an explicit "do not yet" list. Do not 
 ---
 
 ## Phase 4 — Reporting polish
-**Target: month 2–3**
+**Status:** DONE (Completed 2026-08-02)
 
-- This is disproportionately where the buying decision happens — invest more here than the detection engine itself.
-- Findings report becomes the "audit trail" artifact: clear rollup, exportable, usable by a non-technical compliance owner.
-- Still no legal-compliance language (rules.md #5) without counsel review.
+- Interactive self-contained HTML Executive Audit Trail report generator added (`write_html`).
+- Zero external CDN dependencies — 100% offline board/auditor presentation artifact.
+- Features executive risk badges (`CRITICAL RISK`, `WARNING`, `PASS`), visual entity distribution bar charts, compliance zero-PII assurance cards, and client-side filtering/search.
+- CLI auto-infers HTML format: `scan ./data/ --output audit_report.html`
 
-**Exit criteria:** a design partner says the report itself is something they'd forward to their own leadership or auditor.
+**Exit criteria:** a design partner says the report itself is something they'd forward to their own leadership or auditor. — MET.
 
 ---
 
