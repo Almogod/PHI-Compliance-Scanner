@@ -141,12 +141,35 @@ _MASKED_PAN = re.compile(
     re.IGNORECASE,
 )
 
+# Voter ID (EPIC): 3 alpha + 7 digits. Masked forms: first 3 alpha visible,
+# middle digits replaced with X or *, last 3 digits visible.
+_MASKED_VOTER_ID = re.compile(
+    r"(?<![A-Z0-9])"
+    r"([A-Z]{3}[X*]{4}\d{3})"                    # ABCXXXX567 (first 3 + last 3)
+    r"|([A-Z]{3}\d{3}[X*]{4})",                  # ABC567XXXX (first 3 + mid 3)
+    re.IGNORECASE,
+)
+
+# Passport (Indian): 1 letter + 7 digits. Masked forms: first letter visible,
+# middle replaced with X or *, last 3 digits visible.
+_MASKED_PASSPORT = re.compile(
+    r"(?<![A-Z0-9])"
+    r"([A-Z][X*]{4}\d{3})",                      # AXXXX567
+    re.IGNORECASE,
+)
+
 
 def detect_masked_identifiers(text: str) -> list[dict[str, str]]:
     """Detect partially-masked identifiers that are still PII exposure risks.
 
     Returns a list of dicts with 'entity_type' and 'confidence' keys.
     These are reported as separate findings with entity_type suffixed '_MASKED'.
+
+    Covers:
+      - AADHAAR_MASKED : XXXX XXXX 1234 / **** **** 1234 forms
+      - PAN_MASKED     : XXXXX1234X / *****1234* forms
+      - VOTER_ID_MASKED: ABCXXXX567 forms (DPDP Act — partial masking still PII)
+      - PASSPORT_MASKED: AXXXX567 forms
     """
     results: list[dict[str, str]] = []
 
@@ -165,6 +188,26 @@ def detect_masked_identifiers(text: str) -> list[dict[str, str]]:
         if "*" in val or ("X" in val and not val.isalpha()):
             results.append({
                 "entity_type": "PAN_MASKED",
+                "masked_value": val,
+                "confidence": "LOW",
+            })
+
+    # Voter ID masked forms
+    for m in _MASKED_VOTER_ID.finditer(upper):
+        val = m.group(1) or m.group(2)
+        if val and ("X" in val or "*" in val):
+            results.append({
+                "entity_type": "VOTER_ID_MASKED",
+                "masked_value": val,
+                "confidence": "LOW",
+            })
+
+    # Passport masked forms
+    for m in _MASKED_PASSPORT.finditer(upper):
+        val = m.group(1)
+        if val and ("X" in val or "*" in val):
+            results.append({
+                "entity_type": "PASSPORT_MASKED",
                 "masked_value": val,
                 "confidence": "LOW",
             })

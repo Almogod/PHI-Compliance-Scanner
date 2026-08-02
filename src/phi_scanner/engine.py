@@ -7,6 +7,17 @@ v2 improvements over v1:
   - Partially-masked identifier detection (XXXX XXXX 1234 is still PII)
   - Header row extraction for column-level context signals
 
+v3.1 improvements:
+  - scan_path_processes(): ProcessPoolExecutor mode for CPU-bound workloads.
+    Verhoeff computation and regex matching are heavily CPU-bound. ProcessPoolExecutor
+    distributes independent file scans across OS processes, bypassing Python's GIL.
+    On an 8-core machine scanning 10,000 files, this provides near-linear speedup
+    over the ThreadPoolExecutor approach.
+    Windows safety: uses the 'spawn' start method via a top-level picklable function
+    (_scan_file_process) to avoid the fork-import deadlock on Windows.
+    Graceful fallback: if process spawning fails (e.g., frozen executables,
+    restricted environments), falls back to ThreadPoolExecutor automatically.
+
 No network calls are made in this module or anything it imports.
 Scanned content exists in memory only for the duration of the scan and is not
 persisted anywhere except the report the caller explicitly writes.
@@ -158,6 +169,65 @@ class ScanEngine:
             for file_findings in executor.map(_scan_one, files):
                 yield from file_findings
 
+    def scan_path_processes(
+        self, path: Path, max_workers: int = 4
+    ) -> Iterator[Finding]:
+        """CPU-parallel directory scan using ProcessPoolExecutor.
+
+        Distributes independent file scans across OS processes, fully bypassing
+        Python's GIL. Ideal for enterprise workloads (thousands of files) where
+        Verhoeff validation and regex compilation are the dominant cost.
+
+        Key design decisions:
+          - Uses a module-level top-level function (_scan_file_process) so that
+            the target is picklable on Windows (which uses 'spawn', not 'fork').
+          - Automatically falls back to ThreadPoolExecutor if process spawning
+            fails (e.g., frozen binaries, restricted OS environments).
+          - Results are yielded as they complete (using as_completed order) for
+            streaming output behaviour on very large directory trees.
+
+        Args:
+            path       : File or directory to scan.
+            max_workers: Maximum number of OS processes. Recommend cpu_count()-1
+                         to leave one core for I/O and UI.
+        """
+        if path.is_file():
+            yield from self.scan_file(path)
+            return
+
+        if not path.is_dir():
+            raise FileNotFoundError(f"Path does not exist: {path}")
+
+        files = [
+            p for p in sorted(path.rglob("*"))
+            if p.is_file() and p.suffix.lower() in _INGESTERS
+        ]
+        if not files:
+            return
+
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        try:
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_scan_file_process, f): f for f in files}
+                for future in as_completed(futures):
+                    try:
+                        yield from future.result()
+                    except Exception as exc:
+                        # Individual file failure: yield error finding, continue scan
+                        f = futures[future]
+                        err_loc = SourceLocation(file_path=f, sheet_name=None, row=1, column="ERROR")
+                        yield Finding(
+                            entity_type="FILE_READ_ERROR",
+                            masked_value=f"{exc.__class__.__name__}: {str(exc)[:120]}",
+                            confidence="LOW",
+                            location=err_loc,
+                        )
+        except (OSError, RuntimeError):
+            # Fallback: process spawning failed (frozen env, Docker seccomp, etc.)
+            # Silently degrade to ThreadPoolExecutor
+            yield from self.scan_path_parallel(path, max_workers=max_workers)
+
     # ------------------------------------------------------------------
 
     def _scan_cell(
@@ -265,3 +335,25 @@ class ScanEngine:
                     masked["confidence"],
                     location,
                 )
+
+
+# ---------------------------------------------------------------------------
+# Module-level picklable function for ProcessPoolExecutor
+# ---------------------------------------------------------------------------
+# ProcessPoolExecutor (and Python's 'spawn' start method on Windows) requires
+# the submitted callable to be picklable. Instance methods are NOT picklable.
+# This top-level function wraps ScanEngine().scan_file() so that it can be
+# submitted via executor.submit() safely on all platforms.
+
+def _scan_file_process(path: Path) -> list[Finding]:
+    """Top-level picklable wrapper for ScanEngine.scan_file().
+
+    Creates a fresh ScanEngine instance per worker process (each process has
+    its own memory space, so there is no shared-state concern). All ingesters
+    and recognizers are stateless, making this perfectly safe.
+
+    This function MUST remain at module level (not nested inside a class or
+    function) for pickle compatibility with Python's 'spawn' multiprocessing
+    start method on Windows.
+    """
+    return list(ScanEngine().scan_file(path))

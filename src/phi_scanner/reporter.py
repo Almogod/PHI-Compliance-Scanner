@@ -1,4 +1,4 @@
-"""Report generator — CSV and JSON output.
+"""Report generator — CSV, JSON, HTML, and optionally AES-256-GCM encrypted output.
 
 Output format per finding (one row):
   file, sheet, row, column, entity_type, masked_value, confidence
@@ -6,12 +6,28 @@ Output format per finding (one row):
 Rollup summary appended at the end of the CSV (as comment rows) and as a
 top-level key in the JSON output.
 
+Security note (v3.1):
+  The cell-level location data in reports (file + row + column) constitutes a
+  precise PII roadmap. An adversary with the report can locate every piece of
+  sensitive data without ever reading the original files. For storage at rest
+  or distribution to auditors, use write_encrypted() to produce an
+  AES-256-GCM encrypted blob that requires a passphrase to open.
+
+  Encryption algorithm: PBKDF2-HMAC-SHA256 (600,000 iterations) → AES-256-GCM
+  The resulting .phi file format:
+    Header  : b"PHI-SCAN-ENC-v1\n" (16 bytes)
+    Salt    : 16 random bytes (for PBKDF2)
+    Nonce   : 12 random bytes (for AES-GCM)
+    Tag     : 16 bytes (GCM authentication tag, appended after ciphertext)
+    Body    : ciphertext (variable length)
+
 No raw PII values are written to the report — only masked representations.
 """
 from __future__ import annotations
 
 import csv
 import json
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Sequence
@@ -67,6 +83,122 @@ def write_json(findings: Sequence[Finding], output_path: Path) -> None:
 
     with open(output_path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2, ensure_ascii=False)
+
+
+_ENC_HEADER = b"PHI-SCAN-ENC-v1\n"   # 16-byte magic for format identification
+_PBKDF2_ITERATIONS = 600_000         # NIST SP 800-132 recommendation as of 2023
+
+
+def write_encrypted(
+    findings: Sequence[Finding],
+    output_path: Path,
+    passphrase: str,
+) -> None:
+    """Write an AES-256-GCM encrypted audit report to output_path.
+
+    The report payload is the same JSON structure as write_json(), but
+    wrapped in an authenticated encryption envelope so that:
+      - Confidentiality: file-path + cell-location data cannot be read
+        without the passphrase.
+      - Integrity: the GCM authentication tag detects any tampering.
+
+    Decryption is possible with decrypt_report() below or any AES-GCM
+    implementation given the same passphrase and the documented file format.
+
+    Requires: pip install cryptography
+    Raises: ImportError with a clear message if cryptography is not installed.
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        from cryptography.hazmat.primitives import hashes
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError(
+            "Encrypted output requires the 'cryptography' package.\n"
+            "Install it offline: pip install --find-links=wheels cryptography\n"
+            f"Original error: {exc}"
+        ) from exc
+
+    # Build JSON payload (same as write_json)
+    counts: Counter[str] = Counter(f.entity_type for f in findings)
+    file_counts: Counter[str] = Counter(f.location.as_dict()["file"] for f in findings)
+    payload = {
+        "summary": {
+            "total_findings": len(findings),
+            "by_entity_type": dict(sorted(counts.items())),
+            "top_files": [
+                {"file": fp, "count": c}
+                for fp, c in file_counts.most_common(10)
+            ],
+        },
+        "findings": [f.as_dict() for f in findings],
+    }
+    plaintext = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+
+    # Key derivation
+    salt = os.urandom(16)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,   # 256-bit key
+        salt=salt,
+        iterations=_PBKDF2_ITERATIONS,
+    )
+    key = kdf.derive(passphrase.encode("utf-8"))
+
+    # AES-256-GCM encryption
+    nonce = os.urandom(12)   # 96-bit nonce for GCM
+    aesgcm = AESGCM(key)
+    ciphertext_with_tag = aesgcm.encrypt(nonce, plaintext, None)
+    # cryptography library appends the 16-byte GCM tag to ciphertext
+
+    # Write: magic header | salt | nonce | ciphertext+tag
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "wb") as fh:
+        fh.write(_ENC_HEADER)
+        fh.write(salt)
+        fh.write(nonce)
+        fh.write(ciphertext_with_tag)
+
+
+def decrypt_report(encrypted_path: Path, passphrase: str) -> dict:
+    """Decrypt a .phi encrypted report and return the JSON payload as a dict.
+
+    Raises:
+      ValueError   — if the magic header is wrong (not a PHI encrypted file).
+      cryptography.exceptions.InvalidTag — if passphrase is wrong or file is corrupted.
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        from cryptography.hazmat.primitives import hashes
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError(
+            "Decryption requires the 'cryptography' package."
+        ) from exc
+
+    raw = encrypted_path.read_bytes()
+    if not raw.startswith(_ENC_HEADER):
+        raise ValueError(
+            f"{encrypted_path} does not appear to be a PHI-SCAN encrypted report "
+            f"(wrong magic header). Expected: {_ENC_HEADER!r}"
+        )
+
+    offset = len(_ENC_HEADER)
+    salt = raw[offset:offset + 16];        offset += 16
+    nonce = raw[offset:offset + 12];       offset += 12
+    ciphertext_with_tag = raw[offset:]
+
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=_PBKDF2_ITERATIONS,
+    )
+    key = kdf.derive(passphrase.encode("utf-8"))
+
+    aesgcm = AESGCM(key)
+    plaintext = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+    return json.loads(plaintext.decode("utf-8"))
 
 
 def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: str = "") -> None:

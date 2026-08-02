@@ -5,6 +5,8 @@ Usage examples:
   scan ./data/employees.xlsx --output findings.csv
   scan ./data/ --output findings.json --format json
   scan ./data/ --min-confidence MEDIUM
+  scan ./data/ --processes               # CPU-parallel via ProcessPoolExecutor (GIL bypass)
+  scan ./data/ --output secret.phi --encrypt --passphrase "my-secret-key"
 """
 from __future__ import annotations
 
@@ -15,7 +17,7 @@ import click
 
 from .engine import Finding, ScanEngine
 from .redactor import redact_file
-from .reporter import write_csv, write_html, write_json
+from .reporter import write_csv, write_html, write_json, write_encrypted
 
 _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
 
@@ -26,13 +28,13 @@ _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
     "--output", "-o",
     default="report.csv",
     show_default=True,
-    help="Output file path (.csv, .json, or .html).",
+    help="Output file path (.csv, .json, .html, or .phi for encrypted).",
 )
 @click.option(
     "--format", "fmt",
-    type=click.Choice(["csv", "json", "html"], case_sensitive=False),
+    type=click.Choice(["csv", "json", "html", "encrypted"], case_sensitive=False),
     default=None,
-    help="Output format. Inferred from --output extension if not set.",
+    help="Output format. Inferred from --output extension if not set. Use 'encrypted' for AES-256-GCM output.",
 )
 @click.option(
     "--min-confidence",
@@ -67,6 +69,26 @@ _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
     help="Optional path to output a redacted/sanitized copy of the scanned file.",
 )
 @click.option(
+    "--processes",
+    is_flag=True,
+    default=False,
+    help="Use ProcessPoolExecutor (bypasses GIL) for CPU-bound parallel scanning. "
+         "Best for large directories (1000+ files). Falls back to threads if spawn fails.",
+)
+@click.option(
+    "--encrypt",
+    is_flag=True,
+    default=False,
+    help="Write AES-256-GCM encrypted report (.phi format). Requires --passphrase.",
+)
+@click.option(
+    "--passphrase",
+    type=str,
+    default=None,
+    envvar="PHI_SCAN_PASSPHRASE",
+    help="Passphrase for encrypted report (--encrypt). Can also be set via PHI_SCAN_PASSPHRASE env var.",
+)
+@click.option(
     "--web", "--gui",
     is_flag=True,
     default=False,
@@ -87,6 +109,9 @@ def main(
     summary_file: Path | None,
     use_agents: bool,
     redact_output: Path | None,
+    processes: bool,
+    encrypt: bool,
+    passphrase: str | None,
     web: bool,
     quiet: bool,
 ) -> None:
@@ -115,21 +140,43 @@ def main(
             fmt = "json"
         elif ext in (".html", ".htm"):
             fmt = "html"
+        elif ext == ".phi":
+            fmt = "encrypted"
         else:
             fmt = "csv"
+
+    # Validate encrypt usage
+    if encrypt or fmt == "encrypted":
+        fmt = "encrypted"
+        if not passphrase:
+            click.echo(
+                "Error: --encrypt requires a passphrase. Use --passphrase <key> "
+                "or set the PHI_SCAN_PASSPHRASE environment variable.",
+                err=True,
+            )
+            sys.exit(1)
 
     min_rank = _CONFIDENCE_ORDER[min_confidence.upper()]
     engine = ScanEngine()
 
     findings: list[Finding] = []
 
-    mode_label = f"parallel agents mode (workers: {workers})" if use_agents else f"parallel mode (workers: {workers})"
+    mode_label: str
+    if use_agents:
+        mode_label = f"parallel agents mode (workers: {workers})"
+    elif processes:
+        mode_label = f"process pool mode (workers: {workers}, GIL-bypass)"
+    else:
+        mode_label = f"thread pool mode (workers: {workers})"
+
     if not quiet:
         click.echo(f"Scanning: {path} [{mode_label}]", err=True)
 
     try:
         if use_agents:
             scanner = engine.scan_path_agents(path, num_agents=workers)
+        elif processes and path.is_dir():
+            scanner = engine.scan_path_processes(path, max_workers=workers)
         elif path.is_dir():
             scanner = engine.scan_path_parallel(path, max_workers=workers)
         else:
@@ -160,6 +207,15 @@ def main(
         write_json(findings, output_path)
     elif fmt == "html":
         write_html(findings, output_path, target_path_str=str(path.resolve()))
+    elif fmt == "encrypted":
+        # passphrase validated above
+        write_encrypted(findings, output_path, passphrase=passphrase)  # type: ignore[arg-type]
+        if not quiet:
+            click.echo(
+                f"Encrypted report written to: {output_path} "
+                f"(AES-256-GCM, PBKDF2-SHA256, {600_000:,} iterations)",
+                err=True,
+            )
     else:
         write_csv(findings, output_path)
 
