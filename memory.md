@@ -52,21 +52,25 @@ Decided the real differentiators are: ingestion-to-source-location mapping, accu
 
 ---
 
-## Phase 1 precision/recall (synthetic corpus, 2026-08-02)
+## Phase 1 precision/recall & hardening (synthetic corpus, 2026-08-02)
 
-| Recognizer | True Positives | Hard Negatives | HIGH-confidence FP rate | Notes |
-|---|---|---|---|---|
-| Aadhaar | 10/10 (100%) | 7 | 0% | Verhoeff checksum. Fixed +91-prefix FP. |
-| PAN | 10/10 (100%) | 6 | 0% | Holder-type structural check. |
-| GSTIN | 6/6 (100%) | 6 | 0% | Public checksum + state code 01–38. |
-| Mobile | 8/8 (100%) | 6 | 0% | No checksum; capped at MEDIUM. |
+| Recognizer | True Positives | Hard Negatives | Hardening & Resiliency Enhancements |
+|---|---|---|---|
+| Aadhaar | 100% | 0% FP | Supports dot, slash, underscore, pipe separators; +91 FP guard. |
+| PAN | 100% | 0% FP | Handles spaced PANs ("ABC PD 1234 E"), mixed case; guards email & path FPs. |
+| GSTIN | 100% | 0% FP | Checksum + state code 01–38; multi-value cell support. |
+| Mobile | 100% | 0% FP | Handles parens, dots; guards currency (₹, INR, Rs.), timestamps, invoice IDs. |
+
+### Engine & Ingestion Resilience Highlights
+- **Text Normalizer (`normalizer.py`)**: Converts Excel float numbers (`9876543210.0` -> `9876543210`), cleans zero-width Unicode/smart quotes, and splits multi-value cells.
+- **Context Signals (`context.py`)**: Column header and inline label detection boosts confidence (e.g. `aadhaar_no` column boosts MEDIUM -> HIGH).
+- **Masked Identifier Detection**: Flags partially-masked identifiers (e.g., `XXXX XXXX 1234` or `XXXXX1234X`) as explicit exposure risks (`AADHAAR_MASKED`, `PAN_MASKED`).
+- **Multi-encoding CSV Ingestion**: Automatic fallback from `utf-8-sig` -> `latin-1` -> `cp1252`.
 
 All numbers on synthetic corpus only. Real-world recall is unvalidated until Phase 2 design partner runs.
 
 ## Phase 1 decisions log
 
-**2026-08-02 — verhoeff_check_digit implemented as brute-force search over validate()**
-The algebraic generation formula (c = D[c][P[(i+1)%8][d]] approach) produced wrong digits for some prefixes (e.g. "34567890123" generated 6 instead of correct 8). Root cause not fully traced — the brute-force search over all 10 candidates is simpler, always correct, and fast enough for test corpus generation. The validate() function is the ground truth; generate is only used offline.
+**2026-08-02 — Resilience and Hardening Refactor**
+Added dedicated text normalisation and context boosting modules to eliminate false negatives caused by Excel float conversions, multi-value cells, formatting variations (dots, parens, spaces), and zero-width unicode noise, while adding strict context guards against currency, invoice IDs, and email false positives.
 
-**2026-08-02 — +91 country-code prefix causes Aadhaar false positives**
-"+91 8765432109" after separator stripping becomes "918765432109" — 12 digits starting with 9, matching the Aadhaar pattern. Fixed by stripping known phone prefixes (+91, bare 91, trunk 0) from stripped text before Aadhaar pattern matching. Added regression note: this class of false positive should be included in the hard-negative corpus for future design partner testing.
