@@ -85,14 +85,28 @@ class ScanEngine:
     """
 
     def scan_file(self, path: Path) -> Iterator[Finding]:
-        """Yield findings from a single file."""
+        """Yield findings from a single file.
+
+        Safely catches permission locks, file corruption, and format errors
+        so that a single bad file never crashes an entire enterprise scan.
+        """
         suffix = path.suffix.lower()
         ingester = _INGESTERS.get(suffix)
         if ingester is None:
             return  # unsupported format — silently skip
 
-        for cell_text, location in ingester.ingest(path):
-            yield from self._scan_cell(cell_text, location)
+        try:
+            for cell_text, location in ingester.ingest(path):
+                yield from self._scan_cell(cell_text, location)
+        except Exception as exc:
+            # Yield error diagnostic finding so auditors know this file was skipped
+            err_loc = SourceLocation(file_path=path, sheet_name=None, row=1, column="ERROR")
+            yield Finding(
+                entity_type="FILE_READ_ERROR",
+                masked_value=f"Error reading file: {exc.__class__.__name__}",
+                confidence="LOW",
+                location=err_loc,
+            )
 
     def scan_path(self, path: Path) -> Iterator[Finding]:
         """Recursively scan a file or all supported files under a directory."""
@@ -104,6 +118,28 @@ class ScanEngine:
                     yield from self.scan_file(child)
         else:
             raise FileNotFoundError(f"Path does not exist: {path}")
+
+    def scan_path_parallel(self, path: Path, max_workers: int = 4) -> Iterator[Finding]:
+        """Parallel directory scan using thread workers for high throughput."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        if path.is_file():
+            yield from self.scan_file(path)
+            return
+
+        if not path.is_dir():
+            raise FileNotFoundError(f"Path does not exist: {path}")
+
+        files = [p for p in sorted(path.rglob("*")) if p.is_file() and p.suffix.lower() in _INGESTERS]
+        if not files:
+            return
+
+        def _scan_one(f: Path) -> list[Finding]:
+            return list(self.scan_file(f))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for file_findings in executor.map(_scan_one, files):
+                yield from file_findings
 
     # ------------------------------------------------------------------
 

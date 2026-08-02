@@ -32,8 +32,11 @@ Point `scan` to a single spreadsheet or an entire folder of data files:
 # Scan a single file and save results to report.csv
 scan C:\path\to\data_export.xlsx --output report.csv
 
-# Scan an entire directory recursively
-scan C:\path\to\documents\ --output company_findings.csv
+# Scan an entire directory recursively using 8 worker threads
+scan C:\path\to\documents\ --workers 8 --output company_findings.csv
+
+# Generate an Executive Audit Summary JSON file for compliance reporting
+scan C:\path\to\documents\ --output company_findings.csv --summary-file audit_summary.json
 
 # Optional: Export in JSON format
 scan C:\path\to\documents\ --output company_findings.json --format json

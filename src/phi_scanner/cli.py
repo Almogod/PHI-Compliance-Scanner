@@ -41,6 +41,19 @@ _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
     help="Exclude findings below this confidence tier.",
 )
 @click.option(
+    "--workers", "-w",
+    type=int,
+    default=4,
+    show_default=True,
+    help="Number of parallel worker threads for directory scanning.",
+)
+@click.option(
+    "--summary-file", "-s",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Optional path to save an audit summary JSON file.",
+)
+@click.option(
     "--quiet", "-q",
     is_flag=True,
     default=False,
@@ -51,6 +64,8 @@ def main(
     output: str,
     fmt: str | None,
     min_confidence: str,
+    workers: int,
+    summary_file: Path | None,
     quiet: bool,
 ) -> None:
     """Scan PATH (file or directory) for Indian PII identifiers.
@@ -59,6 +74,11 @@ def main(
     No scanned content ever leaves this machine — verified by running with
     network access disabled.
     """
+    import time
+    from collections import Counter
+    import json
+
+    start_time = time.perf_counter()
     output_path = Path(output)
 
     # Infer format from extension if not explicitly set
@@ -69,26 +89,27 @@ def main(
     engine = ScanEngine()
 
     findings: list[Finding] = []
-    file_count = 0
 
     if not quiet:
-        click.echo(f"Scanning: {path}", err=True)
+        click.echo(f"Scanning: {path} (workers: {workers})", err=True)
 
-    for finding in engine.scan_path(path):
-        rank = _CONFIDENCE_ORDER.get(finding.confidence, 0)
-        if rank >= min_rank:
-            findings.append(finding)
-        loc = finding.location
-        if not quiet:
-            # Count unique files seen
-            pass
+    try:
+        # Use parallel scanning for directories, linear for single files
+        scanner = engine.scan_path_parallel(path, max_workers=workers) if path.is_dir() else engine.scan_file(path)
+        for finding in scanner:
+            rank = _CONFIDENCE_ORDER.get(finding.confidence, 0)
+            if rank >= min_rank:
+                findings.append(finding)
+    except Exception as exc:
+        click.echo(f"Fatal error during scan: {exc}", err=True)
+        sys.exit(1)
 
-    # Count unique files from findings
+    duration = time.perf_counter() - start_time
     unique_files = len({str(f.location.file_path) for f in findings})
 
     if not quiet:
         click.echo(
-            f"Done. {len(findings)} finding(s) across {unique_files} file(s).",
+            f"Done in {duration:.2f}s. {len(findings)} finding(s) across {unique_files} file(s).",
             err=True,
         )
 
@@ -104,14 +125,55 @@ def main(
     if not quiet:
         click.echo(f"Report written to: {output_path}", err=True)
 
-    # Print summary table to stdout
-    from collections import Counter
+    # Calculate summary metrics & Executive Risk Level
     counts = Counter(f.entity_type for f in findings)
-    click.echo("\nSummary")
-    click.echo("-------")
-    for entity, count in sorted(counts.items()):
-        click.echo(f"  {entity:<12} {count}")
-    click.echo(f"\n  TOTAL        {len(findings)}")
+    confidence_counts = Counter(f.confidence for f in findings)
+    
+    high_count = confidence_counts.get("HIGH", 0)
+    med_count = confidence_counts.get("MEDIUM", 0)
+    
+    if high_count > 0:
+        risk_level = "CRITICAL RISK (Verified PII Exposure Detected)"
+    elif med_count > 0:
+        risk_level = "WARNING (Unverified/Pattern PII Candidates Detected)"
+    else:
+        risk_level = "LOW RISK"
+
+    if not quiet:
+        click.echo("\n========================================================")
+        click.echo(f"               COMPLIANCE AUDIT SUMMARY                 ")
+        click.echo("========================================================")
+        click.echo(f"  Target Path      : {path.resolve()}")
+        click.echo(f"  Scan Duration    : {duration:.2f} seconds")
+        click.echo(f"  Files Affected   : {unique_files}")
+        click.echo(f"  Total Findings   : {len(findings)}")
+        click.echo(f"  Executive Status : {risk_level}")
+        click.echo("--------------------------------------------------------")
+        click.echo("  Entity Breakdown:")
+        for entity, count in sorted(counts.items()):
+            click.echo(f"    - {entity:<14} : {count}")
+        click.echo("--------------------------------------------------------")
+        click.echo("  Confidence Breakdown:")
+        for conf_tier in ["HIGH", "MEDIUM", "LOW"]:
+            if conf_tier in confidence_counts:
+                click.echo(f"    - {conf_tier:<14} : {confidence_counts[conf_tier]}")
+        click.echo("========================================================\n")
+
+    # Optional Audit Summary JSON File
+    if summary_file is not None:
+        summary_data = {
+            "target_path": str(path.resolve()),
+            "duration_seconds": round(duration, 3),
+            "files_affected": unique_files,
+            "total_findings": len(findings),
+            "risk_level": risk_level,
+            "entity_breakdown": dict(counts),
+            "confidence_breakdown": dict(confidence_counts),
+        }
+        with open(summary_file, "w", encoding="utf-8") as sf:
+            json.dump(summary_data, sf, indent=2)
+        if not quiet:
+            click.echo(f"Audit summary written to: {summary_file}", err=True)
 
 
 if __name__ == "__main__":

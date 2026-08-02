@@ -5,10 +5,13 @@
 ---
 
 ## Current status
-**As of 2026-08-02:** Phase 3 (Expand Coverage) is active.
-- Document format ingestion added: Microsoft Word (`.docx`) and PDF (`.pdf`) formats.
-- Engine supports 5 document/spreadsheet formats: `.csv`, `.xlsx`, `.xls`, `.docx`, `.pdf`.
-- Pilot & regression suite passing 172/172 tests.
+**As of 2026-08-02:** Phase 3 Hardened & Streamlined for Enterprise Scale.
+- Multi-threaded parallel directory scanning (`scan_path_parallel`) with `--workers N`.
+- Bulletproof file error isolation: file locks (`PermissionError`), corrupt ZIPs (`BadZipFile`), and decoding errors yield `FILE_READ_ERROR` diagnostics without crashing scans.
+- Executive Compliance Audit Summary output & `--summary-file` JSON exporter.
+- Formats supported: `.csv`, `.xlsx`, `.xls`, `.docx`, `.pdf`.
+- 172/172 tests passing.
+
 
 
 
