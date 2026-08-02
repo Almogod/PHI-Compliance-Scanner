@@ -45,6 +45,12 @@ _HEADER_PATTERNS: dict[str, list[re.Pattern[str]]] = {
         re.compile(r"\b(?:mobile|mob|phone|ph|tel|cell|contact)\s*(?:no|num|number)?\b", re.IGNORECASE),
         re.compile(r"\b(?:whatsapp|wa)\s*(?:no|num|number)?\b", re.IGNORECASE),
     ],
+    "VOTER_ID": [
+        re.compile(r"\b(?:voter\s*id|epic|voter\s*no|elector\s*photo)\b", re.IGNORECASE),
+    ],
+    "PASSPORT": [
+        re.compile(r"\b(?:passport\s*no|passport\s*num|passport\s*number|ppt\s*no)\b", re.IGNORECASE),
+    ],
 }
 
 

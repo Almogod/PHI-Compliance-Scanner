@@ -5,11 +5,13 @@
 ---
 
 ## Current status
-**As of 2026-08-02:** Phase 4 (Reporting Polish) Complete.
-- Interactive Executive Audit Trail HTML reporter (`write_html`) implemented in `src/phi_scanner/reporter.py`.
-- CLI supports `-o audit_report.html` and `--format html`.
-- Standalone zero-network visual audit dashboard: risk badges, finding distribution bar graphs, and client-side live search/filtering.
-- 175/175 tests passing.
+**As of 2026-08-02:** Phase 6 (v2 Capabilities) Complete.
+- Redaction Engine (`src/phi_scanner/redactor.py`) & `--redact-output` / `-r` CLI flag for CSV/XLSX sanitization.
+- Expanded Identifier Support: Added Indian Voter ID (EPIC) & Indian Passport Number recognizers.
+- Zero-Dependency Built-in Local Web Dashboard (`src/phi_scanner/dashboard.py`) & `--web` / `--gui` CLI flag.
+- Production Air-Gapped `Dockerfile` & `.dockerignore` for containerized execution.
+- 182/182 tests passing.
+
 
 
 

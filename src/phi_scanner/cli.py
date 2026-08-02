@@ -14,6 +14,7 @@ from pathlib import Path
 import click
 
 from .engine import Finding, ScanEngine
+from .redactor import redact_file
 from .reporter import write_csv, write_html, write_json
 
 _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
@@ -60,6 +61,18 @@ _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
     help="Enable Concurrent Agent Orchestration mode for entity scanning.",
 )
 @click.option(
+    "--redact-output", "-r",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Optional path to output a redacted/sanitized copy of the scanned file.",
+)
+@click.option(
+    "--web", "--gui",
+    is_flag=True,
+    default=False,
+    help="Launch local web dashboard UI at http://localhost:8080.",
+)
+@click.option(
     "--quiet", "-q",
     is_flag=True,
     default=False,
@@ -73,6 +86,8 @@ def main(
     workers: int,
     summary_file: Path | None,
     use_agents: bool,
+    redact_output: Path | None,
+    web: bool,
     quiet: bool,
 ) -> None:
     """Scan PATH (file or directory) for Indian PII identifiers.
@@ -84,6 +99,11 @@ def main(
     import time
     from collections import Counter
     import json
+
+    if web:
+        from .dashboard import launch_dashboard
+        launch_dashboard()
+        return
 
     start_time = time.perf_counter()
     output_path = Path(output)
@@ -145,6 +165,14 @@ def main(
 
     if not quiet:
         click.echo(f"Report written to: {output_path}", err=True)
+
+    if redact_output:
+        if path.is_file():
+            redact_count = redact_file(path, redact_output)
+            if not quiet:
+                click.echo(f"Redacted copy written to: {redact_output} ({redact_count} cells sanitized)", err=True)
+        else:
+            click.echo("Redaction flag requires a single target file (directory redaction coming in v2.1).", err=True)
 
     # Calculate summary metrics & Executive Risk Level
     counts = Counter(f.entity_type for f in findings)

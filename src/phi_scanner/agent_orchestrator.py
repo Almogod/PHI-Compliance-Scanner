@@ -32,6 +32,8 @@ from .recognizers.aadhaar import AadhaarMatch, find_aadhaar
 from .recognizers.gstin import GstinMatch, find_gstin
 from .recognizers.mobile import MobileMatch, find_mobile
 from .recognizers.pan import PanMatch, find_pan
+from .recognizers.voter_id import find_voter_id
+from .recognizers.passport import find_passport
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +109,32 @@ class MobileAgent:
         return results
 
 
+class VoterIdAgent:
+    """Specialized Agent for Indian Voter ID (EPIC) detection."""
+
+    def __init__(self, agent_id: str = "agent-voter-id"):
+        self.agent_id = agent_id
+
+    def process_chunk(self, chunk: str) -> list[tuple[str, str, str]]:
+        results = []
+        for m in find_voter_id(chunk):
+            results.append(("VOTER_ID", m.masked_value, m.confidence.value))
+        return results
+
+
+class PassportAgent:
+    """Specialized Agent for Indian Passport Number detection."""
+
+    def __init__(self, agent_id: str = "agent-passport"):
+        self.agent_id = agent_id
+
+    def process_chunk(self, chunk: str) -> list[tuple[str, str, str]]:
+        results = []
+        for m in find_passport(chunk):
+            results.append(("PASSPORT", m.masked_value, m.confidence.value))
+        return results
+
+
 class ParallelAgentOrchestrator:
     """Coordinates parallel agent execution across file streams and entity agents."""
 
@@ -116,6 +144,8 @@ class ParallelAgentOrchestrator:
         self.pan_agent = PanAgent()
         self.gstin_agent = GstinAgent()
         self.mobile_agent = MobileAgent()
+        self.voter_id_agent = VoterIdAgent()
+        self.passport_agent = PassportAgent()
 
     def _process_file(self, path: Path) -> list[AgentFinding]:
         """File Ingestion Agent: Ingests single file and orchestrates entity agents."""
@@ -145,6 +175,8 @@ class ParallelAgentOrchestrator:
                     chunk_matches.extend(self.pan_agent.process_chunk(chunk))
                     chunk_matches.extend(self.gstin_agent.process_chunk(chunk))
                     chunk_matches.extend(self.mobile_agent.process_chunk(chunk))
+                    chunk_matches.extend(self.voter_id_agent.process_chunk(chunk))
+                    chunk_matches.extend(self.passport_agent.process_chunk(chunk))
 
                     for entity_type, masked_value, base_confidence in chunk_matches:
                         key = (entity_type, masked_value)

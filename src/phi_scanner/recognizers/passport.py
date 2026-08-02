@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-_PATTERN = re.compile(r"(?<![A-Z0-9])([A-PR-WYZ][0-9]{7})(?![A-Z0-9])")
+_PATTERN = re.compile(r"(?<![A-Z0-9])([A-NPR-WY-Z][0-9]{7})(?![A-Z0-9])")
 
 
 class Confidence(str, Enum):

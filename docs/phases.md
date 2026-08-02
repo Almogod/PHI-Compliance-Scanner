@@ -78,11 +78,12 @@ Each phase has a goal, exit criteria, and an explicit "do not yet" list. Do not 
 ---
 
 ## Phase 6 — v2 capabilities
-**Target: post-revenue**
+**Status:** DONE (Completed 2026-08-02)
 
-- Redaction/masking output.
-- Docker packaging, local web dashboard.
-- Broader format support, additional Indian identifiers (voter ID, passport) if evidence supports it.
+- Redaction/masking output engine (`redactor.py`) + CLI `--redact-output` option.
+- Production `Dockerfile` and container volume mounting setup.
+- Built-in Zero-Dependency Local Web Dashboard UI (`dashboard.py`) + CLI `--web` flag.
+- Expanded recognizers: Voter ID (EPIC) & Indian Passport numbers integrated into Engine and Parallel Agent Orchestrator.
 
 ---
 

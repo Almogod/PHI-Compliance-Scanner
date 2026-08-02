@@ -1,40 +1,28 @@
 file,sheet,row,column,entity_type,masked_value,confidence
-sample_data\contacts.csv,,2,mobile,IN_MOBILE,XXXXXX3210,MEDIUM
+sample_data\contacts.csv,,2,mobile,IN_MOBILE,XXXXXX3210,HIGH
 sample_data\contacts.csv,,2,aadhaar_no,AADHAAR,XXXX XXXX 0124,HIGH
 sample_data\contacts.csv,,2,pan_no,PAN,XXXXX1234X,HIGH
-sample_data\contacts.csv,,3,mobile,IN_MOBILE,XXXXXX2109,MEDIUM
+sample_data\contacts.csv,,3,mobile,IN_MOBILE,XXXXXX2109,HIGH
 sample_data\contacts.csv,,3,aadhaar_no,AADHAAR,XXXX XXXX 1238,HIGH
 sample_data\contacts.csv,,3,pan_no,PAN,XXXXX5678X,HIGH
-sample_data\contacts.csv,,4,mobile,IN_MOBILE,XXXXXX1098,MEDIUM
+sample_data\contacts.csv,,3,pan_no,PAN_MASKED,XYZCA5678F,LOW
+sample_data\contacts.csv,,4,mobile,IN_MOBILE,XXXXXX1098,HIGH
 sample_data\contacts.csv,,4,aadhaar_no,AADHAAR,XXXX XXXX 2341,HIGH
 sample_data\contacts.csv,,4,pan_no,PAN,XXXXX2345X,HIGH
-sample_data\contacts.csv,,5,mobile,IN_MOBILE,XXXXXX0987,MEDIUM
+sample_data\contacts.csv,,5,mobile,IN_MOBILE,XXXXXX0987,HIGH
 sample_data\contacts.csv,,5,pan_no,PAN,XXXXX6789X,HIGH
-sample_data\contacts.csv,,6,mobile,IN_MOBILE,XXXXXX6789,MEDIUM
+sample_data\contacts.csv,,6,mobile,IN_MOBILE,XXXXXX6789,HIGH
 sample_data\contacts.csv,,6,aadhaar_no,AADHAAR,XXXX XXXX 3458,HIGH
-sample_data\messy_data.xlsx,Employees,2,C,AADHAAR,XXXX XXXX 0124,HIGH
-sample_data\messy_data.xlsx,Employees,2,D,PAN,XXXXX1234X,HIGH
-sample_data\messy_data.xlsx,Employees,2,E,GSTIN,29XXXXXXXXXX1ZA,HIGH
-sample_data\messy_data.xlsx,Employees,2,F,IN_MOBILE,XXXXXX3210,MEDIUM
-sample_data\messy_data.xlsx,Employees,3,C,AADHAAR,XXXX XXXX 1238,HIGH
-sample_data\messy_data.xlsx,Employees,3,D,PAN,XXXXX5678X,HIGH
-sample_data\messy_data.xlsx,Employees,3,F,IN_MOBILE,XXXXXX2109,MEDIUM
-sample_data\messy_data.xlsx,Employees,4,C,AADHAAR,XXXX XXXX 2341,HIGH
-sample_data\messy_data.xlsx,Employees,4,D,PAN,XXXXX2345X,HIGH
-sample_data\messy_data.xlsx,Employees,4,E,GSTIN,27XXXXXXXXXX1ZX,HIGH
-sample_data\messy_data.xlsx,Employees,4,F,IN_MOBILE,XXXXXX1098,MEDIUM
-sample_data\messy_data.xlsx,Employees,5,D,PAN,XXXXX6789X,HIGH
-sample_data\messy_data.xlsx,Employees,5,F,IN_MOBILE,XXXXXX0987,MEDIUM
-sample_data\messy_data.xlsx,Employees,6,C,AADHAAR,XXXX XXXX 3458,HIGH
-sample_data\messy_data.xlsx,Employees,6,E,GSTIN,33XXXXXXXXXX1Z5,HIGH
-sample_data\messy_data.xlsx,Employees,6,F,IN_MOBILE,XXXXXX6789,MEDIUM
+sample_data\contacts.csv,,7,mobile,IN_MOBILE,XXXXXX3210,HIGH
+sample_data\contacts.csv,,7,mobile,IN_MOBILE,XXXXXX2109,HIGH
+sample_data\contacts.csv,,7,aadhaar_no,AADHAAR,XXXX XXXX 0124,HIGH
+sample_data\contacts.csv,,7,pan_no,PAN,XXXXX1234X,HIGH
 
 # --- SUMMARY ---
-# Total findings: 29
-# AADHAAR: 8
-# GSTIN: 3
-# IN_MOBILE: 10
-# PAN: 8
+# Total findings: 18
+# AADHAAR: 5
+# IN_MOBILE: 7
+# PAN: 5
+# PAN_MASKED: 1
 # Top files by finding count:
-#   16  sample_data\messy_data.xlsx
-#   13  sample_data\contacts.csv
+#   18  sample_data\contacts.csv

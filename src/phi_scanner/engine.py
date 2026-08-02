@@ -32,6 +32,8 @@ from .recognizers.aadhaar import find_aadhaar
 from .recognizers.pan import find_pan
 from .recognizers.gstin import find_gstin
 from .recognizers.mobile import find_mobile
+from .recognizers.voter_id import find_voter_id
+from .recognizers.passport import find_passport
 
 # ---------------------------------------------------------------------------
 # Finding dataclass
@@ -222,6 +224,30 @@ class ScanEngine:
                     column_entity, inline_labels,
                 )
                 yield Finding("IN_MOBILE", match.masked_value, confidence, location)
+
+            for match in find_voter_id(chunk):
+                key = ("VOTER_ID", match.masked_value)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                confidence = boost_confidence(
+                    match.confidence.value, "VOTER_ID",
+                    column_entity, inline_labels,
+                )
+                yield Finding("VOTER_ID", match.masked_value, confidence, location)
+
+            for match in find_passport(chunk):
+                key = ("PASSPORT", match.masked_value)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                confidence = boost_confidence(
+                    match.confidence.value, "PASSPORT",
+                    column_entity, inline_labels,
+                )
+                yield Finding("PASSPORT", match.masked_value, confidence, location)
 
             # Step 7: Detect partially-masked identifiers
             for masked in detect_masked_identifiers(chunk):
