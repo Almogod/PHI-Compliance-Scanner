@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "phi-scanner"
@@ -26,8 +26,8 @@ dev = [
     "pytest-cov>=5.0",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/phi_scanner"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -7,13 +7,19 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Copy pyproject.toml and source code
-COPY pyproject.toml /app/
+# Copy metadata files and offline wheels
+COPY pyproject.toml setup.py /app/
+COPY wheels/ /app/wheels/
+
+# Install runtime dependencies 100% offline from local wheels
+RUN pip install --no-cache-dir --no-index --find-links=/app/wheels click openpyxl python-docx pypdf
+
+# Copy source code and docs
 COPY src/ /app/src/
 COPY docs/ /app/docs/
 
-# Install PHI scanner package locally
-RUN pip install --no-cache-dir .
+# Install local package offline
+RUN pip install --no-deps --no-build-isolation -e .
 
 # Create non-root compliance user for security best practice
 RUN useradd -m compliance && chown -R compliance:compliance /app
