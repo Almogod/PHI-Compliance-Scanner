@@ -130,6 +130,8 @@ def find_pan(text: str) -> list[PanMatch]:
                 continue
 
             holder_char = m.group(2)  # 4th character of PAN
+            if holder_char in ("Z", "Q"):
+                continue  # Invalid holder-type code — drop immediately per ITD spec
             is_known_type = holder_char in _HOLDER_TYPES
             confidence = Confidence.HIGH if is_known_type else Confidence.MEDIUM
             results.append(PanMatch(
@@ -141,3 +143,29 @@ def find_pan(text: str) -> list[PanMatch]:
                 end=m.end(),
             ))
     return results
+
+
+# ---------------------------------------------------------------------------
+# BaseRecognizer adapter — auto-registers on import
+# ---------------------------------------------------------------------------
+
+from .base import BaseRecognizer, RecognizerMatch  # noqa: E402
+
+
+class PanRecognizer(BaseRecognizer):
+    """Auto-registered BaseRecognizer adapter wrapping find_pan()."""
+
+    entity_type = "PAN"
+
+    def find(self, text: str) -> list[RecognizerMatch]:
+        return [
+            RecognizerMatch(
+                entity_type="PAN",
+                raw_value=m.raw_value,
+                masked_value=m.masked_value,
+                confidence=m.confidence.value,
+                extra={"holder_type": m.holder_type} if m.holder_type else None,
+            )
+            for m in find_pan(text)
+        ]
+

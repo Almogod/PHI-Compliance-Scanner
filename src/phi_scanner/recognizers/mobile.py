@@ -132,3 +132,28 @@ def find_mobile(text: str) -> list[MobileMatch]:
 
     return results
 
+
+# ---------------------------------------------------------------------------
+# BaseRecognizer adapter — auto-registers on import
+# ---------------------------------------------------------------------------
+
+from .base import BaseRecognizer, RecognizerMatch  # noqa: E402
+
+
+class MobileRecognizer(BaseRecognizer):
+    """Auto-registered BaseRecognizer adapter wrapping find_mobile()."""
+
+    entity_type = "IN_MOBILE"
+
+    def find(self, text: str) -> list[RecognizerMatch]:
+        return [
+            RecognizerMatch(
+                entity_type="IN_MOBILE",
+                raw_value=m.raw_value,
+                masked_value=m.masked_value,
+                confidence=m.confidence.value,
+            )
+            for m in find_mobile(text)
+        ]
+
+

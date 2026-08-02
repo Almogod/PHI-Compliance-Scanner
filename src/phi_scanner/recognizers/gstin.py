@@ -126,3 +126,28 @@ def find_gstin(text: str) -> list[GstinMatch]:
             end=m.end(),
         ))
     return results
+
+
+# ---------------------------------------------------------------------------
+# BaseRecognizer adapter — auto-registers on import
+# ---------------------------------------------------------------------------
+
+from .base import BaseRecognizer, RecognizerMatch  # noqa: E402
+
+
+class GstinRecognizer(BaseRecognizer):
+    """Auto-registered BaseRecognizer adapter wrapping find_gstin()."""
+
+    entity_type = "GSTIN"
+
+    def find(self, text: str) -> list[RecognizerMatch]:
+        return [
+            RecognizerMatch(
+                entity_type="GSTIN",
+                raw_value=m.raw_value,
+                masked_value=m.masked_value,
+                confidence=m.confidence.value,
+                extra={"state_code": m.state_code},
+            )
+            for m in find_gstin(text)
+        ]

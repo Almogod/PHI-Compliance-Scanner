@@ -73,3 +73,28 @@ def find_passport(text: str) -> list[PassportMatch]:
             end=m.end(),
         ))
     return results
+
+
+# ---------------------------------------------------------------------------
+# BaseRecognizer adapter — auto-registers on import
+# ---------------------------------------------------------------------------
+
+from .base import BaseRecognizer, RecognizerMatch  # noqa: E402
+
+
+class PassportRecognizer(BaseRecognizer):
+    """Auto-registered BaseRecognizer adapter wrapping find_passport()."""
+
+    entity_type = "PASSPORT"
+
+    def find(self, text: str) -> list[RecognizerMatch]:
+        return [
+            RecognizerMatch(
+                entity_type="PASSPORT",
+                raw_value=m.raw_value,
+                masked_value=m.masked_value,
+                confidence=m.confidence.value,
+            )
+            for m in find_passport(text)
+        ]
+

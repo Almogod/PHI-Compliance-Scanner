@@ -1,14 +1,11 @@
-"""XLSX ingester — one ``(cell_text, SourceLocation)`` per non-empty cell.
+"""XLSX ingester — streams ``CellRecord`` objects, one per non-empty cell.
 
-v2 improvements:
-  - Numeric cells: Excel stores all numbers as floats. A cell containing the
-    integer 9876543210 yields float 9876543210.0. We convert back to integer
-    form when the value is a whole number (no fractional part).
-  - Boolean cells: True/False are not identifiers but str(True) = "True".
-    Skipped explicitly to avoid noise.
-  - Date/datetime cells: str(datetime) produces ISO format, which is noise.
-    Skipped explicitly.
-  - Error cells: cells with #REF!, #VALUE!, etc. are skipped.
+v4 improvements:
+  - Yields ``CellRecord`` (not bare tuples) so that row_context (sibling cell
+    values) flows into the pipeline for value-density profiling.
+  - Row-level context is collected in a single pass over each row; memory use
+    stays O(row_width) rather than O(sheet_size).
+  - All prior v2 numeric/boolean/date normalizations preserved.
 """
 from __future__ import annotations
 
@@ -19,7 +16,7 @@ from typing import Iterator
 import openpyxl
 from openpyxl.utils import get_column_letter
 
-from .base import SourceLocation
+from .base import CellRecord, SourceLocation
 
 
 class XlsxIngester:
@@ -30,37 +27,60 @@ class XlsxIngester:
     Every sheet in the workbook is scanned in order.
     """
 
+    @staticmethod
+    def _cell_to_str(value: object) -> str | None:
+        """Convert a cell value to a clean string, or None if it should be skipped."""
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None  # True/False are not identifiers
+        if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+            return None  # dates are not PII identifiers
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        text = str(value).strip()
+        return text if text else None
+
     def ingest(self, path: Path) -> Iterator[tuple[str, SourceLocation]]:
+        """Yield ``(cell_text, location)`` for every non-empty cell.
+
+        Legacy tuple protocol for backward compatibility. Use ``ingest_records()``
+        for full ``CellRecord`` objects with row_context.
+        """
+        yield from ((r.text, r.location) for r in self.ingest_records(path))
+
+    def ingest_records(self, path: Path) -> Iterator[CellRecord]:
+        """Yield full ``CellRecord`` objects with row-level sibling context."""
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         try:
             for sheet_name in wb.sheetnames:
                 ws = wb[sheet_name]
                 for row in ws.iter_rows():
+                    # Collect all non-None string values in this row (O(row_width))
+                    row_texts: list[str] = []
+                    cell_entries: list[tuple[str, int, int]] = []  # (text, row_num, col_num)
+
                     for cell in row:
-                        if cell.value is None:
-                            continue
+                        text = self._cell_to_str(cell.value)
+                        if text:
+                            row_texts.append(text)
+                            cell_entries.append((text, cell.row, cell.column))
 
-                        # Skip booleans, dates, and error values — not identifiers
-                        if isinstance(cell.value, bool):
-                            continue
-                        if isinstance(cell.value, (datetime.datetime, datetime.date, datetime.time)):
-                            continue
+                    if not cell_entries:
+                        continue
 
-                        # Convert whole-number floats to int strings
-                        # 9876543210.0 → "9876543210" (not "9876543210.0")
-                        if isinstance(cell.value, float) and cell.value.is_integer():
-                            text = str(int(cell.value))
-                        else:
-                            text = str(cell.value).strip()
+                    row_context = " ".join(row_texts)
 
-                        if not text:
-                            continue
-
-                        yield text, SourceLocation(
-                            file_path=path,
-                            sheet_name=sheet_name,
-                            row=cell.row,
-                            column=get_column_letter(cell.column),
+                    for text, row_num, col_num in cell_entries:
+                        yield CellRecord(
+                            text=text,
+                            location=SourceLocation(
+                                file_path=path,
+                                sheet_name=sheet_name,
+                                row=row_num,
+                                column=get_column_letter(col_num),
+                            ),
+                            row_context=row_context,
                         )
         finally:
             wb.close()

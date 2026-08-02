@@ -40,6 +40,7 @@ from .context import (
     detect_column_entity,
     detect_inline_labels,
     detect_masked_identifiers,
+    detect_row_density,
 )
 from .recognizers.aadhaar import find_aadhaar
 from .recognizers.pan import find_pan
@@ -246,8 +247,9 @@ class ScanEngine:
         seen: set[tuple[str, str]] = set()  # (entity_type, raw_value)
 
         for chunk in chunks:
-            # Step 4: Inline label context
+            # Step 4: Inline label & row-density context
             inline_labels = detect_inline_labels(chunk)
+            has_row_ctx = detect_row_density(text)
 
             # Step 5: Run all recognizers
             for match in find_aadhaar(chunk):
@@ -260,6 +262,8 @@ class ScanEngine:
                 confidence = boost_confidence(
                     match.confidence.value, "AADHAAR",
                     column_entity, inline_labels,
+                    column_name=location.column,
+                    has_row_context=has_row_ctx,
                 )
                 yield Finding("AADHAAR", match.masked_value, confidence, location)
 
@@ -272,6 +276,8 @@ class ScanEngine:
                 confidence = boost_confidence(
                     match.confidence.value, "PAN",
                     column_entity, inline_labels,
+                    column_name=location.column,
+                    has_row_context=has_row_ctx,
                 )
                 yield Finding("PAN", match.masked_value, confidence, location)
 
@@ -284,6 +290,8 @@ class ScanEngine:
                 confidence = boost_confidence(
                     match.confidence.value, "GSTIN",
                     column_entity, inline_labels,
+                    column_name=location.column,
+                    has_row_context=has_row_ctx,
                 )
                 yield Finding("GSTIN", match.masked_value, confidence, location)
 
@@ -296,6 +304,8 @@ class ScanEngine:
                 confidence = boost_confidence(
                     match.confidence.value, "IN_MOBILE",
                     column_entity, inline_labels,
+                    column_name=location.column,
+                    has_row_context=has_row_ctx,
                 )
                 yield Finding("IN_MOBILE", match.masked_value, confidence, location)
 
@@ -308,6 +318,8 @@ class ScanEngine:
                 confidence = boost_confidence(
                     match.confidence.value, "VOTER_ID",
                     column_entity, inline_labels,
+                    column_name=location.column,
+                    has_row_context=has_row_ctx,
                 )
                 yield Finding("VOTER_ID", match.masked_value, confidence, location)
 
@@ -320,6 +332,8 @@ class ScanEngine:
                 confidence = boost_confidence(
                     match.confidence.value, "PASSPORT",
                     column_entity, inline_labels,
+                    column_name=location.column,
+                    has_row_context=has_row_ctx,
                 )
                 yield Finding("PASSPORT", match.masked_value, confidence, location)
 

@@ -48,6 +48,12 @@ class TestPanHardNegatives:
         matches = find_pan("ABCDD1234E")
         assert all(m.confidence == Confidence.MEDIUM for m in matches)
 
+    def test_invalid_z_and_q_dropped(self) -> None:
+        # 4th char Z or Q are invalid status codes and must be dropped immediately
+        assert find_pan("ABCZD1234E") == []
+        assert find_pan("ABCQD1234E") == []
+
+
 
 class TestPanPrecisionRecall:
     def test_precision_on_true_positives(self) -> None:

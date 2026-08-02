@@ -98,3 +98,17 @@ class TestBoostConfidence:
         # Mobile in an "aadhaar" column should NOT be boosted
         result = boost_confidence("MEDIUM", "IN_MOBILE", "AADHAAR", set())
         assert result == "MEDIUM"
+
+    def test_penalty_column_downgrades_to_low(self) -> None:
+        # Serial number / Invoice columns should downgrade to LOW
+        result = boost_confidence("HIGH", "AADHAAR", None, set(), column_name="sl_no")
+        assert result == "LOW"
+
+        result = boost_confidence("MEDIUM", "AADHAAR", None, set(), column_name="invoice_number")
+        assert result == "LOW"
+
+    def test_row_density_boost(self) -> None:
+        # Neighbor context (pincode, address keywords) boosts confidence
+        result = boost_confidence("MEDIUM", "AADHAAR", None, set(), has_row_context=True)
+        assert result == "HIGH"
+

@@ -5,10 +5,15 @@ layer consumes these pairs without knowing anything about the file format.
 
 Design note: source-location specificity is a hard requirement (rules.md §27).
 Every finding must point at an exact cell — not just a file or row.
+
+v4 extension: CellRecord is the canonical, format-agnostic unit of data flowing
+through the pipeline. It wraps the raw text + location and adds row-level
+neighbor context for value-density profiling. Ingesters may optionally yield
+CellRecord objects directly; the pipeline adapter promotes bare tuples.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Protocol, runtime_checkable
 
@@ -36,6 +41,30 @@ class SourceLocation:
         }
 
 
+@dataclass(slots=True)
+class CellRecord:
+    """Canonical, format-agnostic unit of data produced by every ingester.
+
+    Flows through the pipeline as:
+      Ingest → CellRecord → Normalize → Recognize → Aggregate → Report
+
+    Attributes
+    ----------
+    text:
+        The raw cell/chunk content **before** normalization.
+    location:
+        Exact provenance pointing to the source file, sheet, row, column.
+    row_context:
+        All non-empty sibling cell values in the same row, joined by space.
+        Used by ``detect_row_density()`` for value-density profiling without
+        requiring the engine to hold entire rows in memory.
+    """
+
+    text: str
+    location: SourceLocation
+    row_context: str = field(default="")
+
+
 @runtime_checkable
 class Ingester(Protocol):
     """Protocol satisfied by every format-specific ingester."""
@@ -43,3 +72,4 @@ class Ingester(Protocol):
     def ingest(self, path: Path) -> Iterator[tuple[str, SourceLocation]]:
         """Yield ``(cell_text, location)`` for every non-empty cell."""
         ...
+

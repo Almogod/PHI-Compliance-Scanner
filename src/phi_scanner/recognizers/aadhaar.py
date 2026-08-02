@@ -195,3 +195,28 @@ def find_aadhaar(text: str) -> list[AadhaarMatch]:
             end=m.end(),
         ))
     return results
+
+
+# ---------------------------------------------------------------------------
+# BaseRecognizer adapter — auto-registers on import
+# ---------------------------------------------------------------------------
+
+from .base import BaseRecognizer, RecognizerMatch  # noqa: E402
+
+
+class AadhaarRecognizer(BaseRecognizer):
+    """Auto-registered BaseRecognizer adapter wrapping find_aadhaar()."""
+
+    entity_type = "AADHAAR"
+
+    def find(self, text: str) -> list[RecognizerMatch]:
+        return [
+            RecognizerMatch(
+                entity_type="AADHAAR",
+                raw_value=m.raw_value,
+                masked_value=m.masked_value,
+                confidence=m.confidence.value,
+            )
+            for m in find_aadhaar(text)
+        ]
+

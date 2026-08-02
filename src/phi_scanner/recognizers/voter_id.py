@@ -66,3 +66,27 @@ def find_voter_id(text: str) -> list[VoterIdMatch]:
             end=m.end(),
         ))
     return results
+
+
+# ---------------------------------------------------------------------------
+# BaseRecognizer adapter — auto-registers on import
+# ---------------------------------------------------------------------------
+
+from .base import BaseRecognizer, RecognizerMatch  # noqa: E402
+
+
+class VoterIdRecognizer(BaseRecognizer):
+    """Auto-registered BaseRecognizer adapter wrapping find_voter_id()."""
+
+    entity_type = "VOTER_ID"
+
+    def find(self, text: str) -> list[RecognizerMatch]:
+        return [
+            RecognizerMatch(
+                entity_type="VOTER_ID",
+                raw_value=m.raw_value,
+                masked_value=m.masked_value,
+                confidence=m.confidence.value,
+            )
+            for m in find_voter_id(text)
+        ]
