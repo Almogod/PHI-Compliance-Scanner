@@ -17,9 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
-from .ingestion.base import SourceLocation
 from .ingestion.csv_ingester import CsvIngester
 from .ingestion.xlsx_ingester import XlsxIngester
+from .ingestion.docx_ingester import DocxIngester
+from .ingestion.pdf_ingester import PdfIngester
 from .normalizer import normalise_cell
 from .context import (
     boost_confidence,
@@ -63,6 +64,8 @@ _INGESTERS: dict[str, object] = {
     ".csv": CsvIngester(),
     ".xlsx": XlsxIngester(),
     ".xls": XlsxIngester(),
+    ".docx": DocxIngester(),
+    ".pdf": PdfIngester(),
 }
 
 

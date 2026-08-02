@@ -218,7 +218,26 @@ def write_csv(out: Path) -> None:
     print(f"Written: {out}")
 
 
+def write_docx(out: Path) -> None:
+    import docx
+    doc = docx.Document()
+    doc.add_heading("Vendor Service Agreement & Compliance Record", level=1)
+    doc.add_paragraph(f"Primary Signatory Aadhaar: {make_aadhaar('23456789012')}")
+    doc.add_paragraph("PAN Number: ABCPD1234E")
+
+    table = doc.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Authorized Rep"
+    table.cell(0, 1).text = "GSTIN Number"
+    table.cell(1, 0).text = "Priya Sharma"
+    table.cell(1, 1).text = make_gstin("29ABCPD1234E1Z")
+
+    doc.save(out)
+    print(f"Written: {out}")
+
+
 if __name__ == "__main__":
     sample_dir = Path(__file__).parent
     write_xlsx(sample_dir / "messy_data.xlsx")
     write_csv(sample_dir / "contacts.csv")
+    write_docx(sample_dir / "policy_agreement.docx")
+

@@ -5,10 +5,11 @@
 ---
 
 ## Current status
-**As of 2026-08-02:** Phase 2 (Design Partner Pilot) is active.
-- Pilot documentation shipped (`docs/PILOT_GUIDE.md`).
-- Automated feedback ingestion loop operational (`pilot/ingest_feedback.py` -> `tests/test_pilot_regressions.py`).
-- Partner discovery log established (`pilot/DISCOVERY_LOG.md`).
+**As of 2026-08-02:** Phase 3 (Expand Coverage) is active.
+- Document format ingestion added: Microsoft Word (`.docx`) and PDF (`.pdf`) formats.
+- Engine supports 5 document/spreadsheet formats: `.csv`, `.xlsx`, `.xls`, `.docx`, `.pdf`.
+- Pilot & regression suite passing 172/172 tests.
+
 
 
 ---
