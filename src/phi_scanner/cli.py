@@ -3,9 +3,9 @@
 Usage examples:
   scan ./data/
   scan ./data/employees.xlsx --output findings.csv
-  scan ./data/ --output findings.json --format json
-  scan ./data/ --min-confidence MEDIUM
-  scan ./data/ --processes               # CPU-parallel via ProcessPoolExecutor (GIL bypass)
+  scan ./data/ --output summary.pdf --format pdf
+  scan --db "sqlite:///local_database.db" --output db_report.csv
+  scan employees.csv -r remediated.csv --remediation-mode tokenize
   scan ./data/ --output secret.phi --encrypt --passphrase "my-secret-key"
 """
 from __future__ import annotations
@@ -16,8 +16,9 @@ from pathlib import Path
 import click
 
 from .engine import Finding, ScanEngine
+from .pipeline import Pipeline
 from .redactor import redact_file
-from .reporter import write_csv, write_html, write_json, write_encrypted
+from .reporter import write_csv, write_html, write_json, write_encrypted, write_pdf_summary
 
 _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
 
@@ -28,13 +29,19 @@ _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
     "--output", "-o",
     default="report.csv",
     show_default=True,
-    help="Output file path (.csv, .json, .html, or .phi for encrypted).",
+    help="Output file path (.csv, .json, .html, .pdf, or .phi for encrypted).",
 )
 @click.option(
     "--format", "fmt",
-    type=click.Choice(["csv", "json", "html", "encrypted"], case_sensitive=False),
+    type=click.Choice(["csv", "json", "html", "pdf", "encrypted"], case_sensitive=False),
     default=None,
-    help="Output format. Inferred from --output extension if not set. Use 'encrypted' for AES-256-GCM output.",
+    help="Output format. Inferred from --output extension if not set.",
+)
+@click.option(
+    "--db", "db_uri",
+    type=str,
+    default=None,
+    help="Local database connection URI or file (e.g. 'sqlite:///data.db'). Scans tables in strict read-only mode.",
 )
 @click.option(
     "--min-confidence",
@@ -66,14 +73,20 @@ _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
     "--redact-output", "-r",
     type=click.Path(path_type=Path),
     default=None,
-    help="Optional path to output a redacted/sanitized copy of the scanned file.",
+    help="Optional path to output a remediated copy of the scanned file.",
+)
+@click.option(
+    "--remediation-mode",
+    type=click.Choice(["mask", "redact", "tokenize"], case_sensitive=False),
+    default="mask",
+    show_default=True,
+    help="Remediation strategy: 'mask' (XXXX 1234), 'redact' ([REDACTED]), or 'tokenize' (TOK-HMAC).",
 )
 @click.option(
     "--processes",
     is_flag=True,
     default=False,
-    help="Use ProcessPoolExecutor (bypasses GIL) for CPU-bound parallel scanning. "
-         "Best for large directories (1000+ files). Falls back to threads if spawn fails.",
+    help="Use ProcessPoolExecutor for CPU-bound parallel scanning (GIL bypass).",
 )
 @click.option(
     "--encrypt",
@@ -104,18 +117,20 @@ def main(
     path: Path,
     output: str,
     fmt: str | None,
+    db_uri: str | None,
     min_confidence: str,
     workers: int,
     summary_file: Path | None,
     use_agents: bool,
     redact_output: Path | None,
+    remediation_mode: str,
     processes: bool,
     encrypt: bool,
     passphrase: str | None,
     web: bool,
     quiet: bool,
 ) -> None:
-    """Scan PATH (file or directory) for Indian PII identifiers.
+    """Scan PATH (file or directory) or --db for Indian PII identifiers.
 
     Writes a findings report to OUTPUT with masked values and confidence tiers.
     No scanned content ever leaves this machine — verified by running with
@@ -140,6 +155,8 @@ def main(
             fmt = "json"
         elif ext in (".html", ".htm"):
             fmt = "html"
+        elif ext == ".pdf":
+            fmt = "pdf"
         elif ext == ".phi":
             fmt = "encrypted"
         else:
@@ -158,22 +175,27 @@ def main(
 
     min_rank = _CONFIDENCE_ORDER[min_confidence.upper()]
     engine = ScanEngine()
+    pipeline = Pipeline()
 
     findings: list[Finding] = []
 
-    mode_label: str
-    if use_agents:
+    if db_uri:
+        mode_label = f"read-only DB scan ({db_uri})"
+    elif use_agents:
         mode_label = f"parallel agents mode (workers: {workers})"
     elif processes:
         mode_label = f"process pool mode (workers: {workers}, GIL-bypass)"
     else:
         mode_label = f"thread pool mode (workers: {workers})"
 
+    target_desc = db_uri if db_uri else str(path)
     if not quiet:
-        click.echo(f"Scanning: {path} [{mode_label}]", err=True)
+        click.echo(f"Scanning: {target_desc} [{mode_label}]", err=True)
 
     try:
-        if use_agents:
+        if db_uri:
+            scanner = pipeline.scan_db(db_uri)
+        elif use_agents:
             scanner = engine.scan_path_agents(path, num_agents=workers)
         elif processes and path.is_dir():
             scanner = engine.scan_path_processes(path, max_workers=workers)
@@ -195,7 +217,7 @@ def main(
 
     if not quiet:
         click.echo(
-            f"Done in {duration:.2f}s. {len(findings)} finding(s) across {unique_files} file(s).",
+            f"Done in {duration:.2f}s. {len(findings)} finding(s) across {unique_files} source(s).",
             err=True,
         )
 
@@ -206,9 +228,10 @@ def main(
     if fmt == "json":
         write_json(findings, output_path)
     elif fmt == "html":
-        write_html(findings, output_path, target_path_str=str(path.resolve()))
+        write_html(findings, output_path, target_path_str=target_desc)
+    elif fmt == "pdf":
+        write_pdf_summary(findings, output_path, target_path_str=target_desc)
     elif fmt == "encrypted":
-        # passphrase validated above
         write_encrypted(findings, output_path, passphrase=passphrase)  # type: ignore[arg-type]
         if not quiet:
             click.echo(
@@ -224,19 +247,22 @@ def main(
 
     if redact_output:
         if path.is_file():
-            redact_count = redact_file(path, redact_output)
+            redact_count = redact_file(path, redact_output, mode=remediation_mode.lower())
             if not quiet:
-                click.echo(f"Redacted copy written to: {redact_output} ({redact_count} cells sanitized)", err=True)
+                click.echo(
+                    f"Remediated copy written to: {redact_output} "
+                    f"({redact_count} cells remediated via {remediation_mode.upper()} mode)",
+                    err=True,
+                )
         else:
-            click.echo("Redaction flag requires a single target file (directory redaction coming in v2.1).", err=True)
+            click.echo("Redaction flag requires a single target file.", err=True)
 
-    # Calculate summary metrics & Executive Risk Level
     counts = Counter(f.entity_type for f in findings)
     confidence_counts = Counter(f.confidence for f in findings)
-    
+
     high_count = confidence_counts.get("HIGH", 0)
     med_count = confidence_counts.get("MEDIUM", 0)
-    
+
     if high_count > 0:
         risk_level = "CRITICAL RISK (Verified PII Exposure Detected)"
     elif med_count > 0:
@@ -248,9 +274,9 @@ def main(
         click.echo("\n========================================================")
         click.echo(f"               COMPLIANCE AUDIT SUMMARY                 ")
         click.echo("========================================================")
-        click.echo(f"  Target Path      : {path.resolve()}")
+        click.echo(f"  Target Source    : {target_desc}")
         click.echo(f"  Scan Duration    : {duration:.2f} seconds")
-        click.echo(f"  Files Affected   : {unique_files}")
+        click.echo(f"  Sources Affected : {unique_files}")
         click.echo(f"  Total Findings   : {len(findings)}")
         click.echo(f"  Executive Status : {risk_level}")
         click.echo("--------------------------------------------------------")
@@ -264,12 +290,11 @@ def main(
                 click.echo(f"    - {conf_tier:<14} : {confidence_counts[conf_tier]}")
         click.echo("========================================================\n")
 
-    # Optional Audit Summary JSON File
     if summary_file is not None:
         summary_data = {
-            "target_path": str(path.resolve()),
+            "target_source": target_desc,
             "duration_seconds": round(duration, 3),
-            "files_affected": unique_files,
+            "sources_affected": unique_files,
             "total_findings": len(findings),
             "risk_level": risk_level,
             "entity_breakdown": dict(counts),

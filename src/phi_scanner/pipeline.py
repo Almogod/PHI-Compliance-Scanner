@@ -15,10 +15,6 @@ Design principles:
   4. Adding a new file format requires only a new Ingester — zero pipeline changes.
   5. Adding a new PII type requires only a new BaseRecognizer subclass — zero
      engine or pipeline changes.
-
-Concurrency note:
-  ``Pipeline.scan_file()`` is safe to call from multiple threads or processes
-  simultaneously because all state is local to each generator frame.
 """
 from __future__ import annotations
 
@@ -39,6 +35,13 @@ from .ingestion.csv_ingester import CsvIngester
 from .ingestion.docx_ingester import DocxIngester
 from .ingestion.pdf_ingester import PdfIngester
 from .ingestion.xlsx_ingester import XlsxIngester
+from .ingestion.unstructured_ingester import (
+    UnstructuredIngester,
+    JsonIngester,
+    TsvIngester,
+    ParquetIngester,
+)
+from .ingestion.db_ingester import DbIngester
 from .normalizer import normalise_cell
 from .recognizers.base import RECOGNIZER_REGISTRY
 
@@ -56,12 +59,28 @@ import phi_scanner.recognizers.bank_account  # noqa: F401
 # Ingester registry (format → Ingester instance)
 # ---------------------------------------------------------------------------
 
+_UNSTRUCTURED = UnstructuredIngester()
+_JSON_INGESTER = JsonIngester()
+_DB_INGESTER = DbIngester()
+
 _INGESTERS: dict[str, object] = {
-    ".csv":  CsvIngester(),
-    ".xlsx": XlsxIngester(),
-    ".xls":  XlsxIngester(),
-    ".docx": DocxIngester(),
-    ".pdf":  PdfIngester(),
+    ".csv":      CsvIngester(),
+    ".xlsx":     XlsxIngester(),
+    ".xls":      XlsxIngester(),
+    ".docx":     DocxIngester(),
+    ".pdf":      PdfIngester(),
+    ".txt":      _UNSTRUCTURED,
+    ".md":       _UNSTRUCTURED,
+    ".log":      _UNSTRUCTURED,
+    ".rst":      _UNSTRUCTURED,
+    ".markdown": _UNSTRUCTURED,
+    ".json":     _JSON_INGESTER,
+    ".jsonl":    _JSON_INGESTER,
+    ".tsv":      TsvIngester(),
+    ".parquet":  ParquetIngester(),
+    ".db":       _DB_INGESTER,
+    ".sqlite":   _DB_INGESTER,
+    ".sqlite3":  _DB_INGESTER,
 }
 
 
@@ -70,27 +89,14 @@ _INGESTERS: dict[str, object] = {
 # ---------------------------------------------------------------------------
 
 class Pipeline:
-    """Formal Ingest → Transform → Recognize → Boost → Aggregate pipeline.
-
-    Each public method corresponds to one composable pipeline stage. The
-    ``scan_file()`` and ``scan_path()`` methods run the full pipeline.
-
-    Usage
-    -----
-    findings = list(Pipeline().scan_path(Path("./data")))
-    """
+    """Formal Ingest → Transform → Recognize → Boost → Aggregate pipeline."""
 
     # ------------------------------------------------------------------
     # Stage 1: Ingest
     # ------------------------------------------------------------------
 
     def stage_ingest(self, path: Path) -> Iterator[CellRecord]:
-        """Ingest a file and emit ``CellRecord`` objects, one per cell.
-
-        Uses ``ingest_records()`` when available (CSV/XLSX) to capture
-        row-level sibling context. Falls back to bare tuple protocol for
-        other ingesters (DOCX, PDF).
-        """
+        """Ingest a file and emit ``CellRecord`` objects, one per cell."""
         suffix = path.suffix.lower()
         ingester = _INGESTERS.get(suffix)
         if ingester is None:
@@ -99,9 +105,23 @@ class Pipeline:
         if hasattr(ingester, "ingest_records"):
             yield from ingester.ingest_records(path)  # type: ignore[union-attr]
         else:
-            # Legacy tuple protocol — no row context available
             for text, location in ingester.ingest(path):  # type: ignore[misc]
                 yield CellRecord(text=text, location=location, row_context="")
+
+    def scan_db(self, db_connection_uri: str) -> Iterator[Finding]:
+        """Scan a database URI in strict read-only mode."""
+        try:
+            records = _DB_INGESTER.ingest_records(db_connection_uri)
+            transformed = self.stage_transform(records)
+            yield from self.stage_recognize(transformed)
+        except Exception as exc:
+            err_loc = SourceLocation(file_path=Path(db_connection_uri), sheet_name=None, row=1, column="ERROR")
+            yield Finding(
+                entity_type="FILE_READ_ERROR",
+                masked_value=f"{exc.__class__.__name__}: {str(exc)[:120]}",
+                confidence="LOW",
+                location=err_loc,
+            )
 
     # ------------------------------------------------------------------
     # Stage 2: Transform / Normalize
@@ -109,31 +129,22 @@ class Pipeline:
 
     @staticmethod
     def stage_transform(records: Iterator[CellRecord]) -> Iterator[tuple[CellRecord, list[str]]]:
-        """Normalize each cell's text and split multi-value cells into chunks.
-
-        Yields ``(original_record, [chunk, ...])`` pairs. The original record
-        carries the location and row_context; the chunks are the normalised
-        sub-values ready for recognition.
-        """
+        """Normalize each cell's text and split multi-value cells into chunks."""
         for record in records:
             chunks = normalise_cell(record.text)
             if chunks:
                 yield record, chunks
 
     # ------------------------------------------------------------------
-    # Stage 3: Recognize + Stage 4: Context-Boost (combined for cache efficiency)
+    # Stage 3: Recognize + Stage 4: Context-Boost
     # ------------------------------------------------------------------
 
     @staticmethod
     def stage_recognize(
         transformed: Iterator[tuple[CellRecord, list[str]]],
     ) -> Iterator[Finding]:
-        """Run all registered recognizers on each chunk and apply context boosting.
-
-        Immediate masking: raw_value is used only for deduplication and is never
-        stored or yielded. Findings carry only ``masked_value``.
-        """
-        seen: set[tuple[str, str]] = set()  # (entity_type, raw_value_hash) per file
+        """Run all registered recognizers on each chunk and apply context boosting."""
+        seen: set[tuple[str, str]] = set()
 
         for record, chunks in transformed:
             column_entity = detect_column_entity(record.location.column)
@@ -142,16 +153,13 @@ class Pipeline:
             for chunk in chunks:
                 inline_labels = detect_inline_labels(chunk)
 
-                # Run every registered + active recognizer
                 for recognizer in RECOGNIZER_REGISTRY.active():
                     for match in recognizer.find(chunk):
-                        # Immediate deduplication via raw_value (never stored long-term)
                         dedup_key = (match.entity_type, match.raw_value)
                         if dedup_key in seen:
                             continue
                         seen.add(dedup_key)
 
-                        # Context-boosted confidence
                         confidence = boost_confidence(
                             match.confidence,
                             match.entity_type,
@@ -161,7 +169,6 @@ class Pipeline:
                             has_row_context=has_row_ctx,
                         )
 
-                        # raw_value is discarded here — only masked_value survives
                         yield Finding(
                             entity_type=match.entity_type,
                             masked_value=match.masked_value,
@@ -169,7 +176,6 @@ class Pipeline:
                             location=record.location,
                         )
 
-                # Masked identifier detection (AADHAAR_MASKED, PAN_MASKED, etc.)
                 for masked in detect_masked_identifiers(chunk):
                     key = (masked["entity_type"], masked["masked_value"])
                     if key in seen:
@@ -187,11 +193,7 @@ class Pipeline:
     # ------------------------------------------------------------------
 
     def scan_file(self, path: Path) -> Iterator[Finding]:
-        """Run the complete pipeline for a single file.
-
-        Safely catches permission errors, corrupt files, and format errors so
-        that one bad file never crashes an enterprise scan.
-        """
+        """Run the complete pipeline for a single file."""
         try:
             records = self.stage_ingest(path)
             transformed = self.stage_transform(records)
@@ -221,7 +223,7 @@ class Pipeline:
             raise FileNotFoundError(f"Path does not exist: {path}")
 
     def scan_path_parallel(self, path: Path, max_workers: int = 4) -> Iterator[Finding]:
-        """Thread-parallel scan (I/O-bound workloads)."""
+        """Thread-parallel scan."""
         from concurrent.futures import ThreadPoolExecutor
 
         if path.is_file():
@@ -240,7 +242,7 @@ class Pipeline:
                 yield from file_findings
 
     def scan_path_processes(self, path: Path, max_workers: int = 4) -> Iterator[Finding]:
-        """Process-parallel scan (CPU-bound: Verhoeff + regex). Bypasses GIL."""
+        """Process-parallel scan."""
         from concurrent.futures import ProcessPoolExecutor, as_completed
 
         if path.is_file():
@@ -273,13 +275,6 @@ class Pipeline:
             yield from self.scan_path_parallel(path, max_workers=max_workers)
 
 
-# ---------------------------------------------------------------------------
-# Module-level picklable function for ProcessPoolExecutor (Windows spawn safe)
-# ---------------------------------------------------------------------------
-
+# Top-level picklable function for ProcessPoolExecutor
 def _pipeline_scan_file(path: Path) -> list[Finding]:
-    """Top-level picklable wrapper for Pipeline.scan_file().
-
-    Must remain at module level (not nested) for Windows 'spawn' compatibility.
-    """
     return list(Pipeline().scan_file(path))

@@ -1,44 +1,47 @@
 """Text normalizer — cleans cell text before recognition.
 
-Real-world Indian spreadsheets are messy:
+Real-world Indian spreadsheets and unstructured documents are messy:
   - Excel stores numbers as floats (9876543210.0 → "9876543210.0")
+  - Indic scripts use regional digits (e.g. Devanagari ०-९, Bengali ০-৯, Tamil ௦-௯)
   - Cells contain multiple values separated by commas, semicolons, pipes
   - Text has curly/smart quotes, non-breaking spaces, zero-width characters
-  - Identifiers are wrapped in labels like "PAN: ABCPD1234E"
+  - Identifiers are wrapped in labels like "PAN: ABCPD1234E" or "आधार: १२३४..."
   - Mixed encoding artifacts from copy-paste between systems
 
-Production hardening (v3.1):
+Production hardening (v4.0):
   - Hard truncation gate: individual scan chunks are capped at MAX_CHUNK_LEN
-    characters before being handed to any regex engine. This is a ReDoS defence
-    — catastrophic backtracking on unbounded input from large unstructured text
-    blocks (e.g., multi-paragraph free-text cells) can freeze the scanner.
-    512 chars is generous enough to contain any real identifier with surrounding
-    context, and tight enough to keep regex evaluation deterministic O(n).
-
-No PII is cached or stored — normalisation is a pure function.
+    characters before being handed to any regex engine (ReDoS defence).
+  - Indic / Regional numeral translation map (Devanagari, Bengali, Tamil, Gujarati, Telugu → ASCII digits).
 """
 from __future__ import annotations
 
 import re
 import unicodedata
 
-# ---------------------------------------------------------------------------
-# ReDoS defence: hard per-chunk truncation gate
-# ---------------------------------------------------------------------------
-
 # Maximum characters passed to any individual regex recognizer call.
-# Justification:
-#   - Longest Indian identifier: GSTIN at 15 chars + context labels ≈ 50 chars
-#   - Generous surrounding context for inline labels / multi-value cells: 462 chars
-#   - Total: 512 chars is sufficient to detect any real identifier while keeping
-#     regex evaluation bounded. Unbounded cells from free-text or data-dump columns
-#     cannot trigger catastrophic backtracking.
 MAX_CHUNK_LEN: int = 512
 
+# ---------------------------------------------------------------------------
+# Indic / Regional numeral translation map
+# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Unicode normalisation
-# ---------------------------------------------------------------------------
+_INDIC_DIGIT_MAP: dict[int, int] = str.maketrans({
+    # Devanagari (Hindi, Marathi, Nepali, Sanskrit)
+    "०": "0", "१": "1", "२": "2", "३": "3", "४": "4",
+    "५": "5", "६": "6", "७": "7", "८": "8", "९": "9",
+    # Bengali / Assamese
+    "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4",
+    "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9",
+    # Gujarati
+    "૦": "0", "૧": "1", "૨": "2", "૩": "3", "૪": "4",
+    "૫": "5", "૬": "6", "૭": "7", "૮": "8", "૯": "9",
+    # Tamil
+    "௦": "0", "௧": "1", "௨": "2", "௩": "3", "௪": "4",
+    "௫": "5", "௬": "6", "௭": "7", "௮": "8", "௯": "9",
+    # Telugu
+    "౦": "0", "౧": "1", "౨": "2", "౩": "3", "౪": "4",
+    "౫": "5", "౬": "6", "౭": "7", "౮": "8", "౯": "9",
+})
 
 # Zero-width characters that sneak in from web copy-paste
 _ZERO_WIDTH = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff\u00ad]")
@@ -54,8 +57,9 @@ _SMART_QUOTES: dict[str, str] = {
 
 
 def normalise_unicode(text: str) -> str:
-    """Strip invisible characters and normalise whitespace variants."""
+    """Strip invisible characters, normalise whitespace, and translate Indic numerals."""
     text = unicodedata.normalize("NFKC", text)
+    text = text.translate(_INDIC_DIGIT_MAP)
     text = _ZERO_WIDTH.sub("", text)
     text = _UNUSUAL_SPACES.sub(" ", text)
     for smart, straight in _SMART_QUOTES.items():
@@ -71,56 +75,22 @@ _EXCEL_FLOAT_PATTERN = re.compile(r"(?<![\d\.])([\d]+)\.0(?!\d|\.)")
 
 
 def normalise_excel_number(text: str) -> str:
-    """Convert Excel float strings back to integer form.
-
-    Excel internally stores all numbers as IEEE 754 doubles. When openpyxl
-    reads a cell containing the integer 9876543210, it returns the float
-    9876543210.0, which str() renders as "9876543210.0". The trailing ".0"
-    breaks every digit-boundary-anchored pattern.
-
-    Only strips trailing ".0" on whole numbers — does not touch values with
-    version formats like "1.0.0" or actual decimal places like "123.45".
-    """
+    """Convert Excel float strings back to integer form."""
     return _EXCEL_FLOAT_PATTERN.sub(r"\1", text)
-
 
 
 # ---------------------------------------------------------------------------
 # Multi-value cell splitting
 # ---------------------------------------------------------------------------
 
-# Separators that commonly delimit multiple values in a single cell.
-# Does NOT split on spaces (would break everything) or hyphens (used in
-# formatted numbers).
 _CELL_DELIMITERS = re.compile(r"[,;|\\]+")
-
-# Do NOT split on "/" when it is surrounded by digits (date separators like
-# 01/01/2024 or path separators /data/file) — only split "/" between non-digits.
 _SLASH_SPLIT = re.compile(r"(?<!\d)/(?!\d)")
 
 
 def split_multi_value_cell(text: str) -> list[str]:
-    """Split a cell that may contain multiple values into individual chunks.
-
-    Returns the original text as the first element, followed by sub-chunks.
-    Recognizers are run on ALL chunks (original + splits), so an identifier
-    that spans a separator boundary is still caught by the original text pass.
-
-    v3.1: Only splits on "/" when not surrounded by digits, preventing date
-    values like "01/01/2024" from being incorrectly fragmented.
-
-    Examples:
-      "PAN: ABCPD1234E, Mobile: 9876543210"
-        → ["PAN: ABCPD1234E, Mobile: 9876543210",
-           "PAN: ABCPD1234E", "Mobile: 9876543210"]
-
-      "9876543210"  (no delimiters)
-        → ["9876543210"]
-    """
+    """Split a cell that may contain multiple values into individual chunks."""
     chunks = [text]
-    # Split on comma/semicolon/pipe/backslash
     parts = _CELL_DELIMITERS.split(text)
-    # Also split on "/" when not between digits
     slash_parts: list[str] = []
     for p in parts:
         slash_parts.extend(_SLASH_SPLIT.split(p))
@@ -134,23 +104,9 @@ def split_multi_value_cell(text: str) -> list[str]:
     return chunks
 
 
-# ---------------------------------------------------------------------------
-# Full normalisation pipeline
-# ---------------------------------------------------------------------------
-
 def normalise_cell(text: str) -> list[str]:
-    """Full normalisation pipeline: unicode → excel float → truncation → multi-value split.
-
-    Returns a list of text chunks to be scanned. The first element is always
-    the full normalised cell text (truncated to MAX_CHUNK_LEN); additional
-    elements are sub-chunks from multi-value splitting.
-
-    The truncation gate (MAX_CHUNK_LEN) is applied to EVERY chunk before
-    returning, ensuring no unbounded string ever reaches a regex engine.
-    This is the primary ReDoS mitigation.
-    """
+    """Full normalisation pipeline: unicode → Indic translation → float cleanup → split."""
     text = normalise_unicode(text)
     text = normalise_excel_number(text)
     chunks = split_multi_value_cell(text)
-    # Apply the truncation gate to every chunk
     return [c[:MAX_CHUNK_LEN] for c in chunks]

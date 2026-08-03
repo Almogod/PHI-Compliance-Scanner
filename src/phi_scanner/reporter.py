@@ -1,27 +1,10 @@
-"""Report generator — CSV, JSON, HTML, and optionally AES-256-GCM encrypted output.
+"""Report generator — CSV, JSON, HTML, PDF, and AES-256-GCM encrypted output.
 
 Output format per finding (one row):
   file, sheet, row, column, entity_type, masked_value, confidence
 
 Rollup summary appended at the end of the CSV (as comment rows) and as a
 top-level key in the JSON output.
-
-Security note (v3.1):
-  The cell-level location data in reports (file + row + column) constitutes a
-  precise PII roadmap. An adversary with the report can locate every piece of
-  sensitive data without ever reading the original files. For storage at rest
-  or distribution to auditors, use write_encrypted() to produce an
-  AES-256-GCM encrypted blob that requires a passphrase to open.
-
-  Encryption algorithm: PBKDF2-HMAC-SHA256 (600,000 iterations) → AES-256-GCM
-  The resulting .phi file format:
-    Header  : b"PHI-SCAN-ENC-v1\n" (16 bytes)
-    Salt    : 16 random bytes (for PBKDF2)
-    Nonce   : 12 random bytes (for AES-GCM)
-    Tag     : 16 bytes (GCM authentication tag, appended after ciphertext)
-    Body    : ciphertext (variable length)
-
-No raw PII values are written to the report — only masked representations.
 """
 from __future__ import annotations
 
@@ -29,6 +12,7 @@ import csv
 import json
 import os
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
@@ -51,7 +35,6 @@ def write_csv(findings: Sequence[Finding], output_path: Path) -> None:
             counts[f.entity_type] += 1
             file_counts[f.location.as_dict()["file"]] += 1
 
-        # Rollup block
         fh.write("\n")
         fh.write("# --- SUMMARY ---\n")
         fh.write(f"# Total findings: {len(findings)}\n")
@@ -85,8 +68,8 @@ def write_json(findings: Sequence[Finding], output_path: Path) -> None:
         json.dump(payload, fh, indent=2, ensure_ascii=False)
 
 
-_ENC_HEADER = b"PHI-SCAN-ENC-v1\n"   # 16-byte magic for format identification
-_PBKDF2_ITERATIONS = 600_000         # NIST SP 800-132 recommendation as of 2023
+_ENC_HEADER = b"PHI-SCAN-ENC-v1\n"
+_PBKDF2_ITERATIONS = 600_000
 
 
 def write_encrypted(
@@ -99,11 +82,9 @@ def write_encrypted(
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
         from cryptography.hazmat.primitives import hashes
-    except ImportError as exc:  # pragma: no cover
+    except ImportError as exc:
         raise ImportError(
-            "Encrypted output requires the 'cryptography' package.\n"
-            "Install it offline: pip install --find-links=wheels cryptography\n"
-            f"Original error: {exc}"
+            "Encrypted output requires the 'cryptography' package."
         ) from exc
 
     counts: Counter[str] = Counter(f.entity_type for f in findings)
@@ -148,7 +129,7 @@ def decrypt_report(encrypted_path: Path, passphrase: str) -> dict:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
         from cryptography.hazmat.primitives import hashes
-    except ImportError as exc:  # pragma: no cover
+    except ImportError as exc:
         raise ImportError(
             "Decryption requires the 'cryptography' package."
         ) from exc
@@ -156,8 +137,7 @@ def decrypt_report(encrypted_path: Path, passphrase: str) -> dict:
     raw = encrypted_path.read_bytes()
     if not raw.startswith(_ENC_HEADER):
         raise ValueError(
-            f"{encrypted_path} does not appear to be a PHI-SCAN encrypted report "
-            f"(wrong magic header). Expected: {_ENC_HEADER!r}"
+            f"{encrypted_path} does not appear to be a PHI-SCAN encrypted report."
         )
 
     offset = len(_ENC_HEADER)
@@ -179,7 +159,7 @@ def decrypt_report(encrypted_path: Path, passphrase: str) -> dict:
 
 
 def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: str = "") -> None:
-    """Write a self-contained executive audit report as an interactive HTML document with modern light-accent polish."""
+    """Write a self-contained executive audit report as an interactive HTML document."""
     counts: Counter[str] = Counter(f.entity_type for f in findings)
     confidence_counts: Counter[str] = Counter(f.confidence for f in findings)
     file_counts: Counter[str] = Counter(f.location.as_dict()["file"] for f in findings)
@@ -198,7 +178,6 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
         status_badge = '<span class="badge risk-low"><span class="badge-dot"></span>PASS — LOW RISK</span>'
         status_desc = "No high-confidence PII exposures detected."
 
-    # Build rows HTML
     table_rows = []
     for idx, f in enumerate(findings, start=1):
         loc = f.location.as_dict()
@@ -222,7 +201,6 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
 
     rows_html = "\n".join(table_rows)
 
-    # Build bar chart items HTML
     chart_items = []
     max_count = max(counts.values()) if counts else 1
     for entity, count in sorted(counts.items()):
@@ -250,19 +228,15 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
     <style>
         :root {{
             --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-            --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-
             --bg-body: #f8fafc;
             --bg-card: #ffffff;
             --bg-subtle: #f1f5f9;
             --bg-hover: #f8fafc;
-            
             --text-main: #0f172a;
             --text-muted: #64748b;
             --text-dim: #94a3b8;
             --border: #e2e8f0;
             --border-hover: #cbd5e1;
-            
             --primary: #4f46e5;
             --primary-light: #e0e7ff;
             --danger: #e11d48;
@@ -271,241 +245,55 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
             --warning-bg: #fef3c7;
             --success: #059669;
             --success-bg: #d1fae5;
-            
             --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
-            --shadow-md: 0 4px 16px -2px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03);
+            --shadow-md: 0 4px 16px -2px rgba(15, 23, 42, 0.05);
             --shadow-lg: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
-
-            --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
         }}
-
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        body {{
-            font-family: var(--font-sans);
-            background-color: var(--bg-body);
-            color: var(--text-main);
-            padding: 2.5rem 2rem;
-            line-height: 1.5;
-            -webkit-font-smoothing: antialiased;
-        }}
-
+        body {{ font-family: var(--font-sans); background-color: var(--bg-body); color: var(--text-main); padding: 2.5rem 2rem; line-height: 1.5; }}
         .container {{ max-width: 1240px; margin: 0 auto; }}
-
-        header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 1.5rem;
-            margin-bottom: 2rem;
-        }}
-
-        h1 {{
-            font-size: 1.75rem;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-            color: var(--text-main);
-        }}
-        
-        .subtitle {{
-            color: var(--text-muted);
-            font-size: 0.875rem;
-            margin-top: 0.25rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }}
-
-        .badge {{
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-            padding: 0.4rem 0.85rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            transition: transform 160ms var(--ease-out);
-        }}
-
-        .badge-dot {{
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background-color: currentColor;
-        }}
-
+        header {{ display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem; }}
+        h1 {{ font-size: 1.75rem; font-weight: 700; color: var(--text-main); }}
+        .subtitle {{ color: var(--text-muted); font-size: 0.875rem; margin-top: 0.25rem; display: flex; gap: 0.5rem; }}
+        .badge {{ display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.85rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }}
+        .badge-dot {{ width: 6px; height: 6px; border-radius: 50%; background-color: currentColor; }}
         .risk-high {{ background-color: var(--danger-bg); color: var(--danger); border: 1px solid rgba(225, 29, 72, 0.2); }}
         .risk-medium {{ background-color: var(--warning-bg); color: var(--warning); border: 1px solid rgba(217, 119, 6, 0.2); }}
         .risk-low {{ background-color: var(--success-bg); color: var(--success); border: 1px solid rgba(5, 150, 105, 0.2); }}
-
         .conf-high {{ background-color: #ffe4e6; color: #be123c; }}
         .conf-medium {{ background-color: #fef3c7; color: #b45309; }}
         .conf-low {{ background-color: #f1f5f9; color: #475569; }}
-
-        .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 1.25rem;
-            margin-bottom: 2rem;
-        }}
-
-        .stat-card {{
-            background-color: var(--bg-card);
-            padding: 1.5rem;
-            border-radius: 0.85rem;
-            border: 1px solid var(--border);
-            box-shadow: var(--shadow-md);
-            transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out), border-color 200ms var(--ease-out);
-        }}
-
-        .stat-card:hover {{
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-lg);
-            border-color: var(--border-hover);
-        }}
-
-        .stat-label {{ color: var(--text-muted); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }}
-        .stat-value {{ font-size: 2.25rem; font-weight: 800; margin-top: 0.35rem; color: var(--text-main); letter-spacing: -0.03em; font-family: var(--font-mono); }}
-
-        .section-grid {{
-            display: grid;
-            grid-template-columns: 1.8fr 1.2fr;
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }}
-        @media (max-width: 900px) {{ .section-grid {{ grid-template-columns: 1fr; }} }}
-
-        .card {{
-            background-color: var(--bg-card);
-            padding: 1.75rem;
-            border-radius: 0.85rem;
-            border: 1px solid var(--border);
-            box-shadow: var(--shadow-md);
-        }}
-
-        .card-title {{
-            font-size: 1rem;
-            font-weight: 700;
-            color: var(--text-main);
-            margin-bottom: 1.25rem;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 0.75rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }}
-
+        .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; margin-bottom: 2rem; }}
+        .stat-card {{ background-color: var(--bg-card); padding: 1.5rem; border-radius: 0.85rem; border: 1px solid var(--border); box-shadow: var(--shadow-md); }}
+        .stat-label {{ color: var(--text-muted); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }}
+        .stat-value {{ font-size: 2.25rem; font-weight: 800; margin-top: 0.35rem; color: var(--text-main); font-family: var(--font-mono); }}
+        .section-grid {{ display: grid; grid-template-columns: 1.8fr 1.2fr; gap: 1.5rem; margin-bottom: 2rem; }}
+        .card {{ background-color: var(--bg-card); padding: 1.75rem; border-radius: 0.85rem; border: 1px solid var(--border); box-shadow: var(--shadow-md); }}
+        .card-title {{ font-size: 1rem; font-weight: 700; color: var(--text-main); margin-bottom: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; }}
         .chart-row {{ display: flex; align-items: center; gap: 1rem; margin-bottom: 0.85rem; }}
         .chart-label {{ width: 110px; font-size: 0.8125rem; font-weight: 600; color: var(--text-muted); }}
         .chart-bar-bg {{ flex: 1; background-color: var(--bg-subtle); height: 10px; border-radius: 9999px; overflow: hidden; }}
-        .chart-bar-fill {{ background: linear-gradient(90deg, #6366f1, #3b82f6); height: 100%; border-radius: 9999px; transition: width 400ms var(--ease-out); }}
+        .chart-bar-fill {{ background: linear-gradient(90deg, #6366f1, #3b82f6); height: 100%; border-radius: 9999px; }}
         .chart-val {{ width: 40px; text-align: right; font-weight: 700; font-size: 0.8125rem; color: var(--text-main); font-family: var(--font-mono); }}
-
-        .toolbar {{
-            display: flex;
-            gap: 0.75rem;
-            margin-bottom: 1.25rem;
-            flex-wrap: wrap;
-            align-items: center;
-        }}
-
-        .search-input {{
-            background-color: var(--bg-card);
-            border: 1px solid var(--border);
-            color: var(--text-main);
-            padding: 0.55rem 1rem;
-            border-radius: 0.6rem;
-            font-size: 0.875rem;
-            font-family: var(--font-sans);
-            width: 280px;
-            outline: none;
-            box-shadow: var(--shadow-sm);
-            transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
-        }}
-
-        .search-input:focus {{
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px var(--primary-light);
-        }}
-
-        .filter-btn {{
-            background-color: var(--bg-subtle);
-            border: 1px solid var(--border);
-            color: var(--text-muted);
-            padding: 0.5rem 0.85rem;
-            border-radius: 0.6rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 160ms var(--ease-out), transform 120ms var(--ease-out);
-        }}
-
-        .filter-btn:hover {{
-            background-color: #e2e8f0;
-            color: var(--text-main);
-        }}
-
-        .filter-btn:active {{
-            transform: scale(0.97);
-        }}
-
-        .filter-btn.active {{
-            background-color: var(--primary);
-            color: #ffffff;
-            border-color: var(--primary);
-            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25);
-        }}
-
-        .table-wrapper {{
-            overflow-x: auto;
-            border-radius: 0.6rem;
-            border: 1px solid var(--border);
-        }}
-
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.875rem;
-            background-color: var(--bg-card);
-        }}
-
+        .toolbar {{ display: flex; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }}
+        .search-input {{ background-color: var(--bg-card); border: 1px solid var(--border); padding: 0.55rem 1rem; border-radius: 0.6rem; font-size: 0.875rem; width: 280px; }}
+        .filter-btn {{ background-color: var(--bg-subtle); border: 1px solid var(--border); color: var(--text-muted); padding: 0.5rem 0.85rem; border-radius: 0.6rem; font-size: 0.75rem; font-weight: 600; cursor: pointer; }}
+        .filter-btn.active {{ background-color: var(--primary); color: #ffffff; border-color: var(--primary); }}
+        .table-wrapper {{ overflow-x: auto; border-radius: 0.6rem; border: 1px solid var(--border); }}
+        table {{ width: 100%; border-collapse: collapse; font-size: 0.875rem; background-color: var(--bg-card); }}
         th, td {{ padding: 0.85rem 1.1rem; text-align: left; border-bottom: 1px solid var(--border); }}
-        th {{
-            background-color: var(--bg-subtle);
-            color: var(--text-muted);
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.725rem;
-            letter-spacing: 0.05em;
-        }}
-
-        tr {{ transition: background-color 120ms var(--ease-out); }}
-        tr:hover {{ background-color: var(--bg-hover); }}
-
-        .row-num {{ color: var(--text-dim); font-size: 0.75rem; font-family: var(--font-mono); }}
-        .mono {{ font-family: var(--font-mono); font-weight: 600; color: #0284c7; background: #f0f9ff; padding: 0.2rem 0.5rem; border-radius: 0.35rem; border: 1px solid #bae6fd; font-size: 0.8125rem; display: inline-block; }}
-        .file-path {{ word-break: break-all; max-width: 320px; font-size: 0.8125rem; color: #334155; font-weight: 500; }}
-        .location-tag {{ background: var(--bg-subtle); color: var(--text-muted); padding: 0.25rem 0.5rem; border-radius: 0.35rem; font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border); }}
-
-        .entity-tag {{ font-weight: 700; font-size: 0.725rem; padding: 0.25rem 0.5rem; border-radius: 0.35rem; letter-spacing: 0.03em; display: inline-block; }}
+        th {{ background-color: var(--bg-subtle); color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.725rem; }}
+        .mono {{ font-family: var(--font-mono); font-weight: 600; color: #0284c7; background: #f0f9ff; padding: 0.2rem 0.5rem; border-radius: 0.35rem; border: 1px solid #bae6fd; font-size: 0.8125rem; }}
+        .file-path {{ word-break: break-all; max-width: 320px; font-size: 0.8125rem; font-weight: 500; }}
+        .location-tag {{ background: var(--bg-subtle); color: var(--text-muted); padding: 0.25rem 0.5rem; border-radius: 0.35rem; font-size: 0.75rem; border: 1px solid var(--border); }}
+        .entity-tag {{ font-weight: 700; font-size: 0.725rem; padding: 0.25rem 0.5rem; border-radius: 0.35rem; display: inline-block; }}
         .entity-aadhaar {{ background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }}
         .entity-pan {{ background-color: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff; }}
         .entity-gstin {{ background-color: #fce7f3; color: #be185d; border: 1px solid #fbcfe8; }}
         .entity-in_mobile {{ background-color: #d1fae5; color: #047857; border: 1px solid #a7f3d0; }}
-        .entity-bank_account {{ background-color: #fef3c7; color: #b45309; border: 1px solid #fde68a; }}
-        .entity-ifsc {{ background-color: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; }}
-
-        footer {{
-            margin-top: 3rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid var(--border);
-            color: var(--text-muted);
-            font-size: 0.8125rem;
-            text-align: center;
-        }}
+        footer {{ margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.8125rem; text-align: center; }}
     </style>
 </head>
 <body>
@@ -539,7 +327,7 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
             </div>
             <div class="stat-card">
                 <div class="stat-label">Audit Status</div>
-                <div class="stat-value" style="font-size: 1.15rem; font-weight: 600; margin-top: 0.5rem; font-family: var(--font-sans);">{status_desc}</div>
+                <div class="stat-value" style="font-size: 1.15rem; font-weight: 600; margin-top: 0.5rem;">{status_desc}</div>
             </div>
         </div>
 
@@ -603,15 +391,9 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
             rows.forEach(row => {{
                 const entity = row.getAttribute('data-entity');
                 const text = row.innerText.toLowerCase();
-
                 const matchesFilter = (currentFilter === 'ALL' || entity === currentFilter);
                 const matchesSearch = text.includes(searchVal);
-
-                if (matchesFilter && matchesSearch) {{
-                    row.style.display = '';
-                }} else {{
-                    row.style.display = 'none';
-                }}
+                row.style.display = (matchesFilter && matchesSearch) ? '' : 'none';
             }});
         }}
 
@@ -634,3 +416,106 @@ def write_html(findings: Sequence[Finding], output_path: Path, target_path_str: 
 
     with open(output_path, "w", encoding="utf-8") as fh:
         fh.write(html_content)
+
+
+def write_pdf_summary(findings: Sequence[Finding], output_path: Path, target_path_str: str = "") -> None:
+    """Generate an executive-facing PDF compliance summary report."""
+    counts: Counter[str] = Counter(f.entity_type for f in findings)
+    confidence_counts: Counter[str] = Counter(f.confidence for f in findings)
+    file_counts: Counter[str] = Counter(f.location.as_dict()["file"] for f in findings)
+
+    total_findings = len(findings)
+    high_count = confidence_counts.get("HIGH", 0)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    risk_level = "CRITICAL RISK" if high_count > 0 else ("WARNING" if len(findings) > 0 else "LOW RISK")
+
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+
+        doc = SimpleDocTemplate(str(output_path), pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+
+        title_style = ParagraphStyle("TitleStyle", parent=styles["Heading1"], fontSize=20, leading=24, textColor=colors.HexColor("#0f172a"))
+        sub_style = ParagraphStyle("SubStyle", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#64748b"))
+
+        story.append(Paragraph("PHI & PII Compliance Executive Summary", title_style))
+        story.append(Paragraph(f"Target: {target_path_str or 'Local Workspace'} | Generated: {timestamp}", sub_style))
+        story.append(Spacer(1, 15))
+
+        # Risk Banner
+        banner_color = colors.HexColor("#e11d48") if high_count > 0 else colors.HexColor("#059669")
+        banner_text = f"Audit Status: <b>{risk_level}</b> ({total_findings} total findings, {high_count} high-confidence exposures)"
+        banner_style = ParagraphStyle("BannerStyle", parent=styles["Normal"], fontSize=11, textColor=colors.white)
+        
+        banner_table = Table([[Paragraph(banner_text, banner_style)]], colWidths=[540])
+        banner_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), banner_color),
+            ('PADDING', (0,0), (-1,-1), 10),
+            ('CORNER_PAD', (0,0), (-1,-1), 4),
+        ]))
+        story.append(banner_table)
+        story.append(Spacer(1, 20))
+
+        # Summary Metrics Table
+        summary_data = [
+            ["Entity Type", "Finding Count", "Risk Level"],
+        ]
+        for entity, count in sorted(counts.items()):
+            summary_data.append([entity, str(count), "HIGH" if entity in ("AADHAAR", "PAN", "BANK_ACCOUNT") else "MEDIUM"])
+
+        t = Table(summary_data, colWidths=[200, 170, 170])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f1f5f9")),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#0f172a")),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
+            ('PADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(t)
+        doc.build(story)
+
+    except ImportError:
+        # Fallback to structured plain-text PDF content writer when reportlab is not installed
+        pdf_lines = [
+            "%PDF-1.4",
+            "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+            "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+            "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj",
+            "5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
+        ]
+        body_text = (
+            f"PHI & PII Compliance Executive Summary\\n"
+            f"Target: {target_path_str or 'Local Workspace'} | Generated: {timestamp}\\n"
+            f"Status: {risk_level} | Total Findings: {total_findings} | High Confidence: {high_count}\\n"
+            f"Affected Files: {len(file_counts)}\\n\\n"
+            f"Entity Distribution:\\n"
+        )
+        for entity, count in sorted(counts.items()):
+            body_text += f" - {entity}: {count}\\n"
+
+        content_stream = f"BT /F1 12 Tf 50 720 Td ({body_text}) Tj ET"
+        pdf_lines.extend([
+            f"4 0 obj << /Length {len(content_stream)} >> stream",
+            content_stream,
+            "endstream endobj",
+            "xref",
+            "0 6",
+            "0000000000 65535 f ",
+            "0000000009 00000 n ",
+            "0000000058 00000 n ",
+            "0000000115 00000 n ",
+            "0000000280 00000 n ",
+            "0000000200 00000 n ",
+            "trailer << /Size 6 /Root 1 0 R >>",
+            "startxref",
+            "400",
+            "%%EOF",
+        ])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write("\n".join(pdf_lines).encode("latin1"))

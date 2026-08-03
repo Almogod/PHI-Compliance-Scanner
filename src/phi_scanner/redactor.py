@@ -1,22 +1,19 @@
-"""Redaction and Sanitization Engine — produces PII-masked copies of files.
+"""Redaction, Masking, and Tokenization Engine — produces PII-remediated copies of files.
 
-Processes CSV and Excel documents to replace identified PII data cells with
-sanitised representation tokens (e.g. "[REDACTED_AADHAAR]" or "XXXX XXXX 1234"),
-allowing organisations to safely share or store remediated data artifacts.
+Remediation modes:
+  - "mask"    : Replaces sensitive digits with X / asterisks (e.g. "XXXX XXXX 1234")
+  - "redact"  : Replaces sensitive values with explicit token (e.g. "[REDACTED_AADHAAR]")
+  - "tokenize": Replaces sensitive values with deterministic HMAC-SHA256 tokens
+                (e.g. "TOK-AADHAAR-8F3A29B1"), allowing secure cross-dataset correlation
+                without exposing raw PII.
 
-Design notes:
-  - sanitize_text collects ALL replacements first (sorted by position, longest-match
-    priority) and then applies them in a single reverse-offset pass. This avoids the
-    cascade-replacement bug where an earlier replacement shifts string offsets and
-    corrupts subsequent matches.
-  - redact_csv skips None/empty cells entirely so no "None" string artefacts appear
-    in the sanitised output.
-  - redact_xlsx raises a clear ValueError for .xls files since openpyxl only supports
-    the .xlsx format; callers should pre-validate or convert .xls files first.
+Supports CSV, Excel (.xlsx), and plain text documents.
 """
 from __future__ import annotations
 
 import csv
+import hmac
+import hashlib
 from pathlib import Path
 from typing import Sequence
 
@@ -29,75 +26,101 @@ from .recognizers.mobile import find_mobile
 from .recognizers.pan import find_pan
 from .recognizers.passport import find_passport
 from .recognizers.voter_id import find_voter_id
+from .recognizers.bank_account import find_bank_account, find_ifsc
 
 
-def sanitize_text(text: str, mask_token: str | None = None) -> str:
-    """Replace any detected PII tokens within a text string with sanitized masks.
+def tokenize_value(raw_value: str, entity_type: str, salt: str = "PHI_COMPLIANCE_SALT") -> str:
+    """Generate a deterministic, irreversible HMAC-SHA256 token for PII correlation."""
+    digest = hmac.new(salt.encode("utf-8"), raw_value.encode("utf-8"), hashlib.sha256).hexdigest()[:8].upper()
+    return f"TOK-{entity_type}-{digest}"
 
-    Collects all (start, end, replacement) spans from every recognizer first,
-    then applies them in a single reverse-offset pass so earlier replacements
-    cannot shift the string offsets of later replacements (cascade-replace bug fix).
 
-    Overlapping spans are resolved by taking the longer (more specific) match.
+def sanitize_text(
+    text: str,
+    mask_token: str | None = None,
+    mode: str = "mask",
+    salt: str = "PHI_COMPLIANCE_SALT",
+) -> str:
+    """Remediate any detected PII tokens within a text string.
+
+    Parameters
+    ----------
+    text:
+        Input string to remediate.
+    mask_token:
+        Optional explicit replacement string override (e.g. "[REDACTED]").
+    mode:
+        Remediation mode: "mask" | "redact" | "tokenize".
+    salt:
+        Salt string used for HMAC-SHA256 token generation in "tokenize" mode.
     """
     if not text or not text.strip():
         return text
 
-    # --- collect all replacement spans ---
     spans: list[tuple[int, int, str]] = []  # (start, end, replacement)
 
-    # Each recognizer returns matches with start/end positions in its scanned string.
-    # Because passport and voter_id normalise to uppercase internally, we must scan
-    # the original text with the other recognizers and uppercase-normalised text for
-    # those two. However for redaction we use raw_value to locate text accurately.
-    # All recognizers except passport/voter_id operate on the original string.
+    def _get_replacement(raw_val: str, masked_val: str, entity_type: str) -> str:
+        if mask_token:
+            return mask_token
+        if mode == "tokenize":
+            return tokenize_value(raw_val, entity_type, salt=salt)
+        elif mode == "redact":
+            return f"[REDACTED_{entity_type}]"
+        else:  # mask
+            return masked_val
 
+    def _add_span(match_obj, entity_type: str):
+        rep = _get_replacement(getattr(match_obj, "raw_value", getattr(match_obj, "normalised", str(match_obj))), match_obj.masked_value, entity_type)
+        # Try finding formatted, raw_value, or normalised
+        found_target = None
+        for candidate in [getattr(match_obj, "formatted", None), getattr(match_obj, "raw_value", None), getattr(match_obj, "normalised", None)]:
+            if candidate and candidate in text:
+                found_target = candidate
+                break
+        if not found_target:
+            # Try case-insensitive search
+            upper_text = text.upper()
+            for candidate in [getattr(match_obj, "formatted", None), getattr(match_obj, "raw_value", None), getattr(match_obj, "normalised", None)]:
+                if candidate and candidate.upper() in upper_text:
+                    found_target = candidate
+                    break
+
+        if found_target:
+            start = text.find(found_target)
+            if start == -1:
+                start = text.upper().find(found_target.upper())
+            if start != -1:
+                spans.append((start, start + len(found_target), rep))
+
+    # Collect spans from all active recognizers
     for m in find_aadhaar(text):
-        replacement = mask_token or m.masked_value
-        start = text.find(m.raw_value)
-        if start != -1:
-            spans.append((start, start + len(m.raw_value), replacement))
+        _add_span(m, "AADHAAR")
 
     for m in find_pan(text):
-        replacement = mask_token or m.masked_value
-        start = text.upper().find(m.raw_value)
-        if start != -1:
-            spans.append((start, start + len(m.raw_value), replacement))
+        _add_span(m, "PAN")
 
     for m in find_gstin(text):
-        replacement = mask_token or m.masked_value
-        start = text.upper().find(m.raw_value)
-        if start != -1:
-            spans.append((start, start + len(m.raw_value), replacement))
+        _add_span(m, "GSTIN")
 
     for m in find_mobile(text):
-        # raw_value may include country-code prefix — search in stripped version;
-        # fall back to normalised 10-digit form for plain matches
-        start = text.find(m.raw_value)
-        if start == -1:
-            start = text.find(m.normalised)
-            if start != -1:
-                spans.append((start, start + len(m.normalised), mask_token or m.masked_value))
-        else:
-            spans.append((start, start + len(m.raw_value), mask_token or m.masked_value))
+        _add_span(m, "IN_MOBILE")
 
-    upper = text.upper()
     for m in find_voter_id(text):
-        replacement = mask_token or m.masked_value
-        start = upper.find(m.raw_value)
-        if start != -1:
-            spans.append((start, start + len(m.raw_value), replacement))
+        _add_span(m, "VOTER_ID")
 
     for m in find_passport(text):
-        replacement = mask_token or m.masked_value
-        start = upper.find(m.raw_value)
-        if start != -1:
-            spans.append((start, start + len(m.raw_value), replacement))
+        _add_span(m, "PASSPORT")
+
+    for m in find_bank_account(text):
+        _add_span(m, "BANK_ACCOUNT")
+
+    for m in find_ifsc(text):
+        _add_span(m, "IFSC")
 
     if not spans:
         return text
 
-    # --- resolve overlaps: keep longest span; sort by start then length desc ---
+    # Sort spans by start offset, longest match first
     spans.sort(key=lambda s: (s[0], -(s[1] - s[0])))
     resolved: list[tuple[int, int, str]] = []
     last_end = -1
@@ -105,9 +128,7 @@ def sanitize_text(text: str, mask_token: str | None = None) -> str:
         if start >= last_end:
             resolved.append((start, end, rep))
             last_end = end
-        # else: overlapping/nested span — skip (the first/longer one wins)
 
-    # --- apply replacements in reverse order (so offsets stay valid) ---
     result = text
     for start, end, rep in reversed(resolved):
         result = result[:start] + rep + result[end:]
@@ -115,8 +136,14 @@ def sanitize_text(text: str, mask_token: str | None = None) -> str:
     return result
 
 
-def redact_csv(input_path: Path, output_path: Path, mask_token: str | None = None) -> int:
-    """Redact PII in a CSV file and save to output_path. Returns count of redacted cells."""
+def redact_csv(
+    input_path: Path,
+    output_path: Path,
+    mask_token: str | None = None,
+    mode: str = "mask",
+    salt: str = "PHI_COMPLIANCE_SALT",
+) -> int:
+    """Remediate PII in a CSV file and save to output_path. Returns count of modified cells."""
     redacted_count = 0
     rows = []
 
@@ -125,12 +152,11 @@ def redact_csv(input_path: Path, output_path: Path, mask_token: str | None = Non
         for row in reader:
             new_row = []
             for cell in row:
-                # Guard: skip None or empty cells — don't stringify None to "None"
                 if cell is None or not str(cell).strip():
                     new_row.append(cell)
                     continue
                 cell_str = str(cell)
-                sanitized = sanitize_text(cell_str, mask_token=mask_token)
+                sanitized = sanitize_text(cell_str, mask_token=mask_token, mode=mode, salt=salt)
                 if sanitized != cell_str:
                     redacted_count += 1
                 new_row.append(sanitized)
@@ -144,18 +170,17 @@ def redact_csv(input_path: Path, output_path: Path, mask_token: str | None = Non
     return redacted_count
 
 
-def redact_xlsx(input_path: Path, output_path: Path, mask_token: str | None = None) -> int:
-    """Redact PII in an Excel (.xlsx) workbook and save to output_path.
-
-    Note: openpyxl only supports the .xlsx format. Passing a .xls file will raise
-    a ValueError — callers should convert .xls to .xlsx before redacting.
-    """
+def redact_xlsx(
+    input_path: Path,
+    output_path: Path,
+    mask_token: str | None = None,
+    mode: str = "mask",
+    salt: str = "PHI_COMPLIANCE_SALT",
+) -> int:
+    """Remediate PII in an Excel (.xlsx) workbook and save to output_path."""
     suffix = input_path.suffix.lower()
     if suffix == ".xls":
-        raise ValueError(
-            f"openpyxl cannot read .xls (legacy Excel 97-2003) files. "
-            f"Please convert '{input_path.name}' to .xlsx first."
-        )
+        raise ValueError("openpyxl cannot read .xls files. Convert to .xlsx first.")
 
     redacted_count = 0
     wb = openpyxl.load_workbook(input_path)
@@ -163,13 +188,12 @@ def redact_xlsx(input_path: Path, output_path: Path, mask_token: str | None = No
     for sheet in wb.worksheets:
         for row in sheet.iter_rows():
             for cell in row:
-                # Guard: skip None/empty cells — avoids writing the string "None"
                 if cell.value is None:
                     continue
                 val_str = str(cell.value)
                 if not val_str.strip():
                     continue
-                sanitized = sanitize_text(val_str, mask_token=mask_token)
+                sanitized = sanitize_text(val_str, mask_token=mask_token, mode=mode, salt=salt)
                 if sanitized != val_str:
                     cell.value = sanitized
                     redacted_count += 1
@@ -180,12 +204,27 @@ def redact_xlsx(input_path: Path, output_path: Path, mask_token: str | None = No
     return redacted_count
 
 
-def redact_file(input_path: Path, output_path: Path, mask_token: str | None = None) -> int:
-    """Redact PII in input_path (.csv or .xlsx) and write to output_path."""
+def redact_file(
+    input_path: Path,
+    output_path: Path,
+    mask_token: str | None = None,
+    mode: str = "mask",
+    salt: str = "PHI_COMPLIANCE_SALT",
+) -> int:
+    """Remediate PII in input_path (.csv or .xlsx) and write to output_path."""
     suffix = input_path.suffix.lower()
     if suffix == ".csv":
-        return redact_csv(input_path, output_path, mask_token=mask_token)
+        return redact_csv(input_path, output_path, mask_token=mask_token, mode=mode, salt=salt)
     elif suffix in (".xlsx", ".xls"):
-        return redact_xlsx(input_path, output_path, mask_token=mask_token)
+        return redact_xlsx(input_path, output_path, mask_token=mask_token, mode=mode, salt=salt)
     else:
-        raise ValueError(f"Unsupported file format for redaction: {suffix!r}")
+        try:
+            with open(input_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            remediated = sanitize_text(content, mask_token=mask_token, mode=mode, salt=salt)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(remediated)
+            return 1 if remediated != content else 0
+        except Exception as exc:
+            raise ValueError(f"Unsupported file format for remediation: {suffix!r}") from exc
