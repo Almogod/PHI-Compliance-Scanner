@@ -15,6 +15,8 @@ dependencies = [
     "openpyxl>=3.1,<4",
     "python-docx>=1.1.0,<2",
     "pypdf>=4.0.0,<5",
+    "customtkinter>=6.0.0",
+    "reportlab>=4.0.0",
     # cryptography is optional at runtime but required for --encrypt flag.
     # Bundle wheels/ dir for air-gapped environments.
     "cryptography>=42.0,<43",
