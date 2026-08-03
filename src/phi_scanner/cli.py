@@ -1,6 +1,7 @@
 """CLI entrypoint — ``scan <path> --output report.csv``.
 
 Usage examples:
+  scan --gui                              # Launch CustomTkinter Desktop GUI
   scan ./data/
   scan ./data/employees.xlsx --output findings.csv
   scan ./data/ --output summary.pdf --format pdf
@@ -102,7 +103,13 @@ _CONFIDENCE_ORDER = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
     help="Passphrase for encrypted report (--encrypt). Can also be set via PHI_SCAN_PASSPHRASE env var.",
 )
 @click.option(
-    "--web", "--gui",
+    "--gui",
+    is_flag=True,
+    default=False,
+    help="Launch native CustomTkinter desktop GUI application.",
+)
+@click.option(
+    "--web",
     is_flag=True,
     default=False,
     help="Launch local web dashboard UI at http://localhost:8080.",
@@ -127,6 +134,7 @@ def main(
     processes: bool,
     encrypt: bool,
     passphrase: str | None,
+    gui: bool,
     web: bool,
     quiet: bool,
 ) -> None:
@@ -139,6 +147,11 @@ def main(
     import time
     from collections import Counter
     import json
+
+    if gui:
+        from .gui import launch_gui
+        launch_gui()
+        return
 
     if web:
         from .dashboard import launch_dashboard

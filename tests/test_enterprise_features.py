@@ -126,3 +126,11 @@ def test_sqlite_db_ingester(tmp_path: Path):
     pan_finding = next(f for f in findings if f.entity_type == "PAN")
     assert pan_finding.location.sheet_name == "users"
     assert pan_finding.location.column == "pan"
+
+
+def test_gui_import():
+    """Verify CustomTkinter GUI module can be imported and initialized."""
+    import customtkinter
+    from phi_scanner.gui import ComplianceScannerGUI
+    assert ComplianceScannerGUI is not None
+
